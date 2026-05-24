@@ -169,21 +169,40 @@ export default function ProfileForm({
               />
             </div>
             <div className="field">
-              <label>Activity level</label>
-              <select
+              <label>
+                VO2max <span className="muted">— from your watch</span>
+              </label>
+              <input
                 className="inp"
-                value={p.activityLevel}
+                type="number"
+                step="0.1"
+                placeholder="unknown"
+                value={p.vo2max ?? ""}
                 onChange={(e) =>
-                  set("activityLevel", e.target.value as ActivityLevel)
+                  set(
+                    "vo2max",
+                    e.target.value === "" ? null : Number(e.target.value),
+                  )
                 }
-              >
-                {activities.map((a) => (
-                  <option key={a} value={a}>
-                    {ACTIVITY_LABELS[a]}
-                  </option>
-                ))}
-              </select>
+              />
             </div>
+          </div>
+
+          <div className="field">
+            <label>Activity level</label>
+            <select
+              className="inp"
+              value={p.activityLevel}
+              onChange={(e) =>
+                set("activityLevel", e.target.value as ActivityLevel)
+              }
+            >
+              {activities.map((a) => (
+                <option key={a} value={a}>
+                  {ACTIVITY_LABELS[a]}
+                </option>
+              ))}
+            </select>
           </div>
 
           {/* BMR */}

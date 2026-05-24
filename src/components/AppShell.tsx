@@ -1,10 +1,9 @@
-// The persistent sidebar + main layout. Nutrition, Activity and Profile are
-// live; the Today dashboard arrives with the biological-age engine.
+// The persistent sidebar + main layout. Every destination is now live.
 
 import type { ReactNode } from "react";
 
 const NAV = [
-  { key: "today", label: "Today", soon: true },
+  { key: "today", label: "Today", soon: false, href: "/today" },
   { key: "nutrition", label: "Nutrition AI", soon: false, href: "/nutrition" },
   { key: "activity", label: "Activity", soon: false, href: "/activity" },
   { key: "profile", label: "Profile", soon: false, href: "/profile" },

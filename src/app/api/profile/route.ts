@@ -33,6 +33,7 @@ function sanitize(body: Record<string, unknown>): Profile {
     ? (body.activityLevel as Profile["activityLevel"])
     : "moderate";
   const bf = num(body.bodyFatPct, NaN);
+  const vo2 = num(body.vo2max, NaN);
   const override = num(body.bmrOverride, NaN);
 
   return {
@@ -43,6 +44,7 @@ function sanitize(body: Record<string, unknown>): Profile {
     heightCm: Math.max(80, Math.min(250, num(body.heightCm, DEFAULT_PROFILE.heightCm))),
     weightKg: Math.max(25, Math.min(350, num(body.weightKg, DEFAULT_PROFILE.weightKg))),
     bodyFatPct: Number.isFinite(bf) && bf > 0 ? Math.min(70, bf) : null,
+    vo2max: Number.isFinite(vo2) && vo2 > 0 ? Math.min(90, vo2) : null,
     activityLevel: activity,
     bmrOverride: Number.isFinite(override) && override > 0 ? Math.round(override) : null,
     energyGoal: goal as Profile["energyGoal"],

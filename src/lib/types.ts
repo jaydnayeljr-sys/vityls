@@ -20,6 +20,7 @@ export interface Profile {
   heightCm: number;
   weightKg: number;
   bodyFatPct: number | null;
+  vo2max: number | null;
   activityLevel: ActivityLevel;
   bmrOverride: number | null;
   energyGoal: EnergyGoal;
@@ -46,6 +47,7 @@ export const DEFAULT_PROFILE: Profile = {
   heightCm: 178,
   weightKg: 76.4,
   bodyFatPct: null,
+  vo2max: null,
   activityLevel: "moderate",
   bmrOverride: null,
   energyGoal: "deficit",

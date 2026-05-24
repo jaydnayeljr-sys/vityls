@@ -15,6 +15,7 @@ function rowToProfile(row: Record<string, unknown>): Profile {
     weightKg: Number(row.weight_kg ?? DEFAULT_PROFILE.weightKg),
     bodyFatPct:
       row.body_fat_pct == null ? null : Number(row.body_fat_pct),
+    vo2max: row.vo2max == null ? null : Number(row.vo2max),
     activityLevel:
       (row.activity_level as Profile["activityLevel"]) ??
       DEFAULT_PROFILE.activityLevel,
@@ -35,6 +36,7 @@ function profileToRow(p: Profile): Record<string, unknown> {
     height_cm: p.heightCm,
     weight_kg: p.weightKg,
     body_fat_pct: p.bodyFatPct,
+    vo2max: p.vo2max,
     activity_level: p.activityLevel,
     bmr_override: p.bmrOverride,
     energy_goal: p.energyGoal,
