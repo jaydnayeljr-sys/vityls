@@ -1,5 +1,5 @@
 // ===========================================================================
-// Vitals — Claude API integration.
+// Vityl — Claude API integration.
 //
 // Turns a free-text meal description into a structured nutrition breakdown.
 // Uses Claude's tool-use so the model is forced to return clean JSON.
@@ -117,7 +117,7 @@ const NUTRITION_TOOL: Anthropic.Tool = {
   },
 };
 
-const SYSTEM_PROMPT = `You are the nutrition analyst inside Vitals, a personal health app.
+const SYSTEM_PROMPT = `You are the nutrition analyst inside Vityl, a personal health app.
 The user describes what they ate in plain language; you return an accurate,
 structured breakdown.
 

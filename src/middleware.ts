@@ -1,26 +1,28 @@
-// Single-user password gate. Any route except the login page and the login
-// API is redirected to /login unless a valid session cookie is present.
+// Auth gate. Routes are private unless the request carries a session cookie;
+// signed-out visitors are sent to the landing/login page. The /api/sync
+// endpoint is public here — it authenticates with its own device token.
 
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-// /api/sync is reached by the Android bridge, which has no session cookie —
-// it authenticates itself with the SYNC_TOKEN instead, so it is public here.
-const PUBLIC_PATHS = ["/login", "/api/login", "/api/sync"];
+const PUBLIC_PATHS = [
+  "/login",
+  "/signup",
+  "/api/auth/login",
+  "/api/auth/signup",
+  "/api/sync",
+];
 
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
-  const isPublic = PUBLIC_PATHS.some((p) => pathname.startsWith(p));
-  const authed = req.cookies.get("vitals_session")?.value === "ok";
+  const isPublic = PUBLIC_PATHS.some(
+    (p) => pathname === p || pathname.startsWith(p + "/"),
+  );
+  const hasSession = Boolean(req.cookies.get("vityl_session")?.value);
 
-  if (!authed && !isPublic) {
+  if (!hasSession && !isPublic) {
     const url = req.nextUrl.clone();
     url.pathname = "/login";
-    return NextResponse.redirect(url);
-  }
-  if (authed && pathname === "/login") {
-    const url = req.nextUrl.clone();
-    url.pathname = "/profile";
     return NextResponse.redirect(url);
   }
   return NextResponse.next();

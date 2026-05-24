@@ -1,4 +1,4 @@
-# Vitals — Phases 1–4
+# Vityl — Phases 1–5
 
 A consolidated, science-grounded health dashboard. This repository covers the
 **Phase 1** build (app skeleton, calculation engine, Profile screen), the
@@ -79,9 +79,7 @@ Edit `.env.local`:
 ```
 SUPABASE_URL=https://your-project-ref.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
-APP_PASSWORD=pick-any-passphrase
 ANTHROPIC_API_KEY=sk-ant-your-key-here
-SYNC_TOKEN=pick-a-long-random-string
 ```
 
 > The app still runs without these configured — it falls back to default data
@@ -103,8 +101,7 @@ Profile screen. The Nutrition AI and Activity screens are in the sidebar.
 1. Push this folder to a Git repository (GitHub / GitLab).
 2. Import it at <https://vercel.com/new>.
 3. Add the environment variables (`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`,
-   `APP_PASSWORD`, `ANTHROPIC_API_KEY`, `SYNC_TOKEN`) in the Vercel project
-   settings.
+   `ANTHROPIC_API_KEY`) in the Vercel project settings.
 4. Deploy. Vercel builds and hosts both the UI and the API routes.
 
 ---
@@ -244,3 +241,48 @@ Run the Phase 4 migration once in the Supabase SQL Editor —
 `supabase/migration-phase4.sql` adds the optional `vo2max` column to the
 profile. A fresh `schema.sql` run already includes it. Then enter your VO2max
 on the Profile screen if your watch reports it.
+
+
+---
+
+## Phase 5 — Accounts (multi-user)
+
+Vityl is now multi-user. The single shared passphrase is gone; every visitor
+creates their own account and sees only their own data.
+
+- **Sign-up / sign-in** with email and password. Passwords are hashed with
+  scrypt (Node's built-in crypto); sessions are httpOnly cookies backed by a
+  `session` table.
+- **Per-user data.** Every table carries a `user_id`; all server queries are
+  scoped to the signed-in user. Row-level security is enabled so the public
+  anon key cannot read anything — all access is via the server-only
+  service-role key.
+- **Landing page.** `/login` is a public, SEO-optimised landing page with the
+  sign-in call to action and an app-download section.
+- **Per-user activity sync.** The shared `SYNC_TOKEN` is replaced by a personal
+  device token shown on each user's Profile screen. Paste it into the Vityl
+  Android app — `/api/sync` resolves the token to the right account.
+
+`APP_PASSWORD` and `SYNC_TOKEN` environment variables are no longer used.
+
+### Setting up Phase 5
+
+1. **Database.** For a fresh database, run the updated `supabase/schema.sql`.
+   To upgrade an existing Phase 1-4 database in place, run
+   `supabase/migration-phase5.sql` instead.
+2. **Claim your old data (existing databases only).** After you create your
+   account, run this once in the Supabase SQL Editor so your previously synced
+   activity and meals attach to it:
+
+   ```sql
+   update daily_metric     set user_id = (select id from app_user order by created_at limit 1) where user_id is null;
+   update sleep_session    set user_id = (select id from app_user order by created_at limit 1) where user_id is null;
+   update food_log         set user_id = (select id from app_user order by created_at limit 1) where user_id is null;
+   update food_item        set user_id = (select id from app_user order by created_at limit 1) where user_id is null;
+   update bio_age_snapshot set user_id = (select id from app_user order by created_at limit 1) where user_id is null;
+   ```
+
+   Your profile biometrics are quick to re-enter on the Profile screen.
+3. **Reconnect the Android app.** Open the Profile screen, copy your personal
+   sync token, and paste it into the Vityl Bridge app in place of the old
+   shared token.

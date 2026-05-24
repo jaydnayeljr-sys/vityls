@@ -1,12 +1,8 @@
-// POST /api/sync — ingest endpoint for the Vitals Android Health Connect
-// bridge. Authenticated with a shared SYNC_TOKEN (not the password cookie),
-// so it is exempt from the middleware password gate.
+// POST /api/sync — ingest endpoint for the Vityl Android Health Connect
+// bridge. Authenticated by a per-user device token (no session cookie), so it
+// is exempt from the password gate.
 //
-// Body: {
-//   metrics?: [{ date: "YYYY-MM-DD", metric: "steps"|..., value: number }],
-//   sleep?:   [{ night: "YYYY-MM-DD", totalMin, deepMin, remMin,
-//                lightMin, awakeMin, score, startAt?, endAt? }]
-// }
+// Body: { metrics?: [...], sleep?: [...] }  — see the README.
 // Reply: { ok, metricsWritten, sleepWritten }  or  { ok: false, error }
 
 import { NextResponse } from "next/server";
@@ -17,6 +13,7 @@ import {
   type SleepInput,
 } from "@/lib/activity-store";
 import { METRIC_KEYS, type MetricKey } from "@/lib/activity-types";
+import { getUserIdBySyncToken } from "@/lib/users-store";
 
 export const dynamic = "force-dynamic";
 
@@ -29,25 +26,16 @@ function numOrNull(v: unknown): number | null {
 }
 
 export async function POST(req: Request) {
-  const token = process.env.SYNC_TOKEN;
-  if (!token) {
-    return NextResponse.json(
-      {
-        ok: false,
-        error: "Sync is not configured — set SYNC_TOKEN on the server.",
-      },
-      { status: 503 },
-    );
-  }
-
-  // Accept the token as a Bearer header or an x-sync-token header.
+  // Resolve the device token (Bearer header or x-sync-token) to a user.
   const auth = req.headers.get("authorization") ?? "";
-  const provided = auth.toLowerCase().startsWith("bearer ")
+  const token = auth.toLowerCase().startsWith("bearer ")
     ? auth.slice(7).trim()
     : (req.headers.get("x-sync-token") ?? "").trim();
-  if (provided !== token) {
+
+  const userId = await getUserIdBySyncToken(token);
+  if (!userId) {
     return NextResponse.json(
-      { ok: false, error: "Unauthorized" },
+      { ok: false, error: "Unrecognised sync token." },
       { status: 401 },
     );
   }
@@ -60,10 +48,7 @@ export async function POST(req: Request) {
         ? (parsed as Record<string, unknown>)
         : {};
   } catch {
-    return NextResponse.json(
-      { ok: false, error: "Bad request" },
-      { status: 400 },
-    );
+    return NextResponse.json({ ok: false, error: "Bad request" }, { status: 400 });
   }
 
   const metrics: MetricInput[] = [];
@@ -114,8 +99,8 @@ export async function POST(req: Request) {
   }
 
   try {
-    const metricsWritten = await upsertMetrics(metrics);
-    const sleepWritten = await upsertSleep(sleep);
+    const metricsWritten = await upsertMetrics(userId, metrics);
+    const sleepWritten = await upsertSleep(userId, sleep);
     return NextResponse.json({ ok: true, metricsWritten, sleepWritten });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Could not save the data.";

@@ -1,8 +1,5 @@
-// PATCH  /api/nutrition/item  — edit one logged food item
-// DELETE /api/nutrition/item  — remove one logged food item
-//
-// Both reply with the refreshed daily totals so the UI can re-render:
-//   { ok: true, nutrition }   or   { ok: false, error }
+// PATCH  /api/nutrition/item  — edit one of the user's logged food items
+// DELETE /api/nutrition/item  — remove one of the user's logged food items
 
 import { NextResponse } from "next/server";
 import {
@@ -11,6 +8,7 @@ import {
   updateFoodItem,
   type FoodItemPatch,
 } from "@/lib/nutrition-store";
+import { getCurrentUser } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
@@ -22,8 +20,8 @@ const NUM_KEYS = [
   "fiber_g",
 ] as const;
 
-function bad(error: string) {
-  return NextResponse.json({ ok: false, error }, { status: 400 });
+function bad(error: string, status = 400) {
+  return NextResponse.json({ ok: false, error }, { status });
 }
 
 async function readBody(req: Request): Promise<Record<string, unknown> | null> {
@@ -38,6 +36,9 @@ async function readBody(req: Request): Promise<Record<string, unknown> | null> {
 }
 
 export async function PATCH(req: Request) {
+  const user = await getCurrentUser();
+  if (!user) return bad("Not signed in.", 401);
+
   const body = await readBody(req);
   if (!body) return bad("Bad request");
 
@@ -53,18 +54,20 @@ export async function PATCH(req: Request) {
   }
 
   try {
-    await updateFoodItem(id, patch);
+    await updateFoodItem(user.id, id, patch);
   } catch (err) {
-    const msg =
-      err instanceof Error ? err.message : "Could not save the change.";
+    const msg = err instanceof Error ? err.message : "Could not save the change.";
     return NextResponse.json({ ok: false, error: msg }, { status: 500 });
   }
 
-  const nutrition = await getTodayNutrition();
+  const nutrition = await getTodayNutrition(user.id);
   return NextResponse.json({ ok: true, nutrition });
 }
 
 export async function DELETE(req: Request) {
+  const user = await getCurrentUser();
+  if (!user) return bad("Not signed in.", 401);
+
   const body = await readBody(req);
   if (!body) return bad("Bad request");
 
@@ -72,13 +75,12 @@ export async function DELETE(req: Request) {
   if (!Number.isInteger(id) || id <= 0) return bad("Missing a valid item id.");
 
   try {
-    await deleteFoodItem(id);
+    await deleteFoodItem(user.id, id);
   } catch (err) {
-    const msg =
-      err instanceof Error ? err.message : "Could not delete the item.";
+    const msg = err instanceof Error ? err.message : "Could not delete the item.";
     return NextResponse.json({ ok: false, error: msg }, { status: 500 });
   }
 
-  const nutrition = await getTodayNutrition();
+  const nutrition = await getTodayNutrition(user.id);
   return NextResponse.json({ ok: true, nutrition });
 }

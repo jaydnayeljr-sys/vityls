@@ -141,7 +141,7 @@ export default function NutritionChat({
         <div className="chat-head">
           <div className="ai-mark">V</div>
           <div>
-            <b>Vitals Coach</b>
+            <b>Vityl Coach</b>
             <small>Meal logging · IFCT 2017 · USDA · brands online</small>
           </div>
         </div>

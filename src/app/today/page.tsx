@@ -7,6 +7,7 @@ import { deriveTargets } from "@/lib/calc";
 import { getTodayNutrition } from "@/lib/nutrition-store";
 import { getActivitySummary } from "@/lib/activity-store";
 import { getBioAgeReport } from "@/lib/bioage-store";
+import { requireUser } from "@/lib/session";
 import { supabaseConfigured } from "@/lib/supabase";
 import type { BioAgeReport } from "@/lib/bioage-store";
 
@@ -21,11 +22,12 @@ function hm(min: number): string {
 }
 
 export default async function TodayPage() {
-  const profile = await getProfile();
+  const user = await requireUser();
+  const profile = await getProfile(user.id);
   const targets = deriveTargets(profile);
-  const nutrition = await getTodayNutrition();
-  const activity = await getActivitySummary(profile, 7);
-  const bio = await getBioAgeReport(profile);
+  const nutrition = await getTodayNutrition(user.id);
+  const activity = await getActivitySummary(user.id, profile, 7);
+  const bio = await getBioAgeReport(user.id, profile);
 
   const today = new Date().toLocaleDateString("en-US", {
     weekday: "long",
@@ -34,7 +36,7 @@ export default async function TodayPage() {
   });
 
   return (
-    <AppShell active="today" userName={profile.name}>
+    <AppShell active="today" userName={user.name}>
       <div className="topbar">
         <h1>Today</h1>
         <p>{today} — your whole picture at a glance.</p>

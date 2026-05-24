@@ -1,4 +1,4 @@
-// Server-side biological-age report: gathers the user's recent synced markers,
+// Server-side biological-age report: gathers a user's recent synced markers,
 // runs the engine, saves today's snapshot, and returns the dated trend.
 
 import "server-only";
@@ -9,7 +9,6 @@ import type { Profile } from "./types";
 
 export type { BioAgeResult } from "./bioage";
 
-// How many trailing days of synced data feed the marker averages.
 const WINDOW_DAYS = 14;
 
 export interface BioAgeTrendPoint {
@@ -27,8 +26,11 @@ function average(values: number[]): number {
   return values.reduce((s, v) => s + v, 0) / values.length;
 }
 
-/** Builds the bio-age report and stores today's snapshot. */
-export async function getBioAgeReport(profile: Profile): Promise<BioAgeReport> {
+/** Builds a user's bio-age report and stores today's snapshot. */
+export async function getBioAgeReport(
+  userId: string,
+  profile: Profile,
+): Promise<BioAgeReport> {
   const dates = lastNDates(WINDOW_DAYS);
   const start = dates[0];
   const today = dates[dates.length - 1];
@@ -42,6 +44,7 @@ export async function getBioAgeReport(profile: Profile): Promise<BioAgeReport> {
     const { data: metricRows } = await supabase
       .from("daily_metric")
       .select("metric, value")
+      .eq("user_id", userId)
       .gte("metric_date", start)
       .lte("metric_date", today)
       .in("metric", ["rhr", "hrv"]);
@@ -60,6 +63,7 @@ export async function getBioAgeReport(profile: Profile): Promise<BioAgeReport> {
     const { data: sleepRows } = await supabase
       .from("sleep_session")
       .select("total_min")
+      .eq("user_id", userId)
       .gte("night_date", start)
       .lte("night_date", today);
     const sleepValues = ((sleepRows ?? []) as Record<string, unknown>[])
@@ -79,20 +83,21 @@ export async function getBioAgeReport(profile: Profile): Promise<BioAgeReport> {
   });
 
   if (supabaseConfigured) {
-    // Save (or overwrite) today's snapshot, then read the dated history.
     await supabase.from("bio_age_snapshot").upsert(
       {
+        user_id: userId,
         snapshot_date: today,
         bio_age: result.bioAge,
         chronological: result.chronological,
         contributions: result.contributions,
       },
-      { onConflict: "snapshot_date" },
+      { onConflict: "user_id,snapshot_date" },
     );
 
     const { data: snapRows } = await supabase
       .from("bio_age_snapshot")
       .select("snapshot_date, bio_age, chronological")
+      .eq("user_id", userId)
       .order("snapshot_date", { ascending: true })
       .limit(60);
     for (const row of (snapRows ?? []) as Record<string, unknown>[]) {

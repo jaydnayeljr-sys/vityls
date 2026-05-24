@@ -1,5 +1,4 @@
-// Server-side read/write for food logs. Stores meals extracted by the AI and
-// rolls them up into daily totals for the dashboard.
+// Server-side read/write for a user's food logs and daily nutrition totals.
 
 import "server-only";
 import { supabase, supabaseConfigured } from "./supabase";
@@ -33,8 +32,7 @@ export interface FoodItemPatch {
   fiber_g?: number;
 }
 
-/** Local calendar date (YYYY-MM-DD). The dev server runs on the user's
- *  machine, so local time is correct. Revisit if deployed to a UTC host. */
+/** Local calendar date (YYYY-MM-DD). */
 export function todayLocal(): string {
   const d = new Date();
   const p = (x: number) => String(x).padStart(2, "0");
@@ -72,13 +70,17 @@ function rowToItem(row: Record<string, unknown>): LoggedItem {
   };
 }
 
-/** Persists an extracted meal: one food_log row plus its food_item rows. */
-export async function logMeal(meal: ExtractedMeal): Promise<void> {
+/** Persists an extracted meal for a user. */
+export async function logMeal(
+  userId: string,
+  meal: ExtractedMeal,
+): Promise<void> {
   if (!supabaseConfigured) throw new Error("Supabase is not configured.");
 
   const { data: log, error: logErr } = await supabase
     .from("food_log")
     .insert({
+      user_id: userId,
       logged_for: todayLocal(),
       meal: meal.meal,
       raw_text: meal.rawText,
@@ -88,6 +90,7 @@ export async function logMeal(meal: ExtractedMeal): Promise<void> {
   if (logErr || !log) throw new Error(logErr?.message ?? "Could not save the meal.");
 
   const rows = meal.items.map((it) => ({
+    user_id: userId,
     food_log_id: (log as { id: number }).id,
     name: it.name,
     source: it.source,
@@ -105,8 +108,10 @@ export async function logMeal(meal: ExtractedMeal): Promise<void> {
   }
 }
 
-/** Returns everything logged today plus the rolled-up totals. */
-export async function getTodayNutrition(): Promise<DailyNutrition> {
+/** Returns everything a user logged today plus the rolled-up totals. */
+export async function getTodayNutrition(
+  userId: string,
+): Promise<DailyNutrition> {
   const date = todayLocal();
   if (!supabaseConfigured) {
     return { date, totals: emptyTotals(), meals: [] };
@@ -115,6 +120,7 @@ export async function getTodayNutrition(): Promise<DailyNutrition> {
   const { data, error } = await supabase
     .from("food_log")
     .select("id, meal, raw_text, created_at, food_item(*)")
+    .eq("user_id", userId)
     .eq("logged_for", date)
     .order("created_at", { ascending: true });
 
@@ -138,7 +144,6 @@ export async function getTodayNutrition(): Promise<DailyNutrition> {
     };
   });
 
-  // Round totals for display.
   totals.calories = Math.round(totals.calories);
   totals.protein_g = Math.round(totals.protein_g);
   totals.carbs_g = Math.round(totals.carbs_g);
@@ -161,8 +166,9 @@ function cleanNumber(v: unknown): number {
   return Number.isFinite(x) && x >= 0 ? Math.round(x * 10) / 10 : 0;
 }
 
-/** Applies a user's manual edit to a single logged food item. */
+/** Applies a user's manual edit to one of their logged food items. */
 export async function updateFoodItem(
+  userId: string,
   id: number,
   patch: FoodItemPatch,
 ): Promise<void> {
@@ -183,22 +189,30 @@ export async function updateFoodItem(
   const { error } = await supabase
     .from("food_item")
     .update(fields)
-    .eq("id", id);
+    .eq("id", id)
+    .eq("user_id", userId);
   if (error) throw new Error(error.message);
 }
 
-/** Removes a single logged food item. If its parent meal log is left empty,
- *  the log row is removed too so the record stays tidy. */
-export async function deleteFoodItem(id: number): Promise<void> {
+/** Removes one of a user's logged food items (and an emptied meal log). */
+export async function deleteFoodItem(
+  userId: string,
+  id: number,
+): Promise<void> {
   if (!supabaseConfigured) throw new Error("Supabase is not configured.");
 
   const { data: item } = await supabase
     .from("food_item")
     .select("food_log_id")
     .eq("id", id)
-    .single();
+    .eq("user_id", userId)
+    .maybeSingle();
 
-  const { error } = await supabase.from("food_item").delete().eq("id", id);
+  const { error } = await supabase
+    .from("food_item")
+    .delete()
+    .eq("id", id)
+    .eq("user_id", userId);
   if (error) throw new Error(error.message);
 
   const logId = (item as { food_log_id?: number } | null)?.food_log_id;
@@ -208,7 +222,11 @@ export async function deleteFoodItem(id: number): Promise<void> {
       .select("id", { count: "exact", head: true })
       .eq("food_log_id", logId);
     if ((count ?? 0) === 0) {
-      await supabase.from("food_log").delete().eq("id", logId);
+      await supabase
+        .from("food_log")
+        .delete()
+        .eq("id", logId)
+        .eq("user_id", userId);
     }
   }
 }
