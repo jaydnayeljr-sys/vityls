@@ -1,4 +1,4 @@
-# Vitals — Phases 1–3
+# Vitals — Phases 1–4
 
 A consolidated, science-grounded health dashboard. This repository covers the
 **Phase 1** build (app skeleton, calculation engine, Profile screen), the
@@ -12,6 +12,7 @@ the *Architecture & Methodology Specification* for the full plan.
 
 ## What works
 
+- **Today dashboard** — the home screen: your estimated **biological age** with a per-marker breakdown and trend, then calorie balance, macros, sleep and activity.
 - **Profile screen** — age, sex, height, weight, body-fat %, activity level and
   energy goal; everything saves to Postgres.
 - **Calculation engine** — BMR (Mifflin-St Jeor, or Katch-McArdle when body
@@ -31,8 +32,8 @@ the *Architecture & Methodology Specification* for the full plan.
 - **Password gate** — a single passphrase protects the whole app (the
   `/api/sync` endpoint is exempt; it uses its own token instead).
 
-The Today destination appears in the sidebar but is marked *Soon* — its
-headline metric is Bio Age, which arrives with the biological-age engine.
+Every destination — Today, Nutrition AI, Activity and Profile — is live.
+The Today dashboard is the app's home screen.
 
 ---
 
@@ -209,3 +210,37 @@ The ingest endpoint and Activity screen are ready. The remaining piece is the
 **Android companion app** — a background data bridge that reads Health Connect
 on the phone and pushes steps, heart rate, HRV and sleep to `/api/sync`. It
 will ship as a Kotlin project to build in Android Studio.
+
+
+---
+
+## Phase 4 — Biological age + the Today dashboard (now included)
+
+The **Today** dashboard is live and is the app's home screen. It leads with
+your **estimated biological age**, followed by calorie balance, macros, sleep
+and activity.
+
+### The biological-age engine
+
+`src/lib/bioage.ts` is a transparent, pure estimator. It starts from your
+chronological age and shifts it using markers that research links to the pace
+of ageing, each compared to an age/sex-referenced norm:
+
+- **VO2max** — cardiorespiratory fitness, the strongest anchor (optional;
+  entered on the Profile screen)
+- **Resting heart rate** — averaged from synced data
+- **Heart rate variability (RMSSD)** — averaged from synced data
+- **Sleep** — average nightly duration vs a ~7.5 h optimum
+- **Body-fat %** — composition outside the healthy range
+
+Every contribution is capped so one noisy reading cannot dominate, and the
+total shift is capped at +/- 12 years. The Today screen shows each marker's
+contribution, so the number is never a black box. A daily snapshot is saved to
+`bio_age_snapshot`, and a trend line builds up over time.
+
+### Upgrading an existing install
+
+Run the Phase 4 migration once in the Supabase SQL Editor —
+`supabase/migration-phase4.sql` adds the optional `vo2max` column to the
+profile. A fresh `schema.sql` run already includes it. Then enter your VO2max
+on the Profile screen if your watch reports it.
