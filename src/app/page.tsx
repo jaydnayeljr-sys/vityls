@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 
-// Phase 1 has one functional screen — the Profile. Send the user there.
-// The Today dashboard arrives in a later phase.
+// The Today dashboard is the home screen — biological age, calorie balance,
+// macros, sleep and activity at a glance.
 export default function Home() {
-  redirect("/profile");
+  redirect("/today");
 }

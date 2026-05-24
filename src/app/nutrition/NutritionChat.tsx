@@ -58,7 +58,7 @@ export default function NutritionChat({
         id: msgSeq++,
         role: "ai",
         text:
-          "Tell me what you've eaten — in plain language — and I'll look up each item's nutrition from reputable sources online (USDA, IFCT 2017, brand labels) before logging it. Everything lands in Today's Meals below, where you can edit any number.",
+          "Tell me what you've eaten — in plain language — and I'll work out the calories, macros and micros from the IFCT 2017 and USDA food tables. For branded or packaged products I'll look up the label online. Everything lands in Today's Meals below, where you can edit any number.",
       },
     ];
     for (const m of initialNutrition.meals) {
@@ -142,7 +142,7 @@ export default function NutritionChat({
           <div className="ai-mark">V</div>
           <div>
             <b>Vitals Coach</b>
-            <small>Meal logging · web-verified nutrition</small>
+            <small>Meal logging · IFCT 2017 · USDA · brands online</small>
           </div>
         </div>
 
