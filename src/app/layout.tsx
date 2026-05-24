@@ -2,8 +2,30 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Vitals — Health Dashboard",
-  description: "A consolidated, science-grounded health dashboard.",
+  title: {
+    default: "Vityl — Know your biological age",
+    template: "%s · Vityl",
+  },
+  description:
+    "Vityl turns your nutrition, activity and sleep into one science-grounded health dashboard — with an estimated biological age that moves with your habits.",
+  keywords: [
+    "biological age",
+    "health dashboard",
+    "VO2max",
+    "HRV",
+    "calorie tracker",
+    "nutrition AI",
+    "Health Connect",
+    "fitness age",
+  ],
+  authors: [{ name: "Vityl" }],
+  openGraph: {
+    title: "Vityl — Know your biological age",
+    description:
+      "One dashboard for nutrition, activity, sleep and an estimated biological age that moves with your habits.",
+    type: "website",
+  },
+  robots: { index: true, follow: true },
 };
 
 export default function RootLayout({

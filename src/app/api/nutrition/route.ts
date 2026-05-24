@@ -1,30 +1,36 @@
 // GET  /api/nutrition  — today's logged nutrition + the user's targets
 // POST /api/nutrition  — log a meal from a free-text description
-//
-// POST body: { text: string }
-// POST reply (logged):        { ok, meal, nutrition }
-// POST reply (need details):  { ok, clarification }
 
 import { NextResponse } from "next/server";
 import { extractNutrition, anthropicConfigured } from "@/lib/anthropic";
 import { getTodayNutrition, logMeal } from "@/lib/nutrition-store";
 import { getProfile } from "@/lib/profile-store";
 import { deriveTargets } from "@/lib/calc";
+import { getCurrentUser } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 // Web-search-backed extraction can take a while; give the route room on Vercel.
 export const maxDuration = 60;
 
+function unauthorized() {
+  return NextResponse.json(
+    { ok: false, error: "Not signed in." },
+    { status: 401 },
+  );
+}
+
 export async function GET() {
-  const profile = await getProfile();
-  const nutrition = await getTodayNutrition();
-  return NextResponse.json({
-    targets: deriveTargets(profile),
-    nutrition,
-  });
+  const user = await getCurrentUser();
+  if (!user) return unauthorized();
+  const profile = await getProfile(user.id);
+  const nutrition = await getTodayNutrition(user.id);
+  return NextResponse.json({ targets: deriveTargets(profile), nutrition });
 }
 
 export async function POST(req: Request) {
+  const user = await getCurrentUser();
+  if (!user) return unauthorized();
+
   let text = "";
   try {
     const body = await req.json();
@@ -44,7 +50,7 @@ export async function POST(req: Request) {
       {
         ok: false,
         error:
-          "The AI assistant is not configured. Add ANTHROPIC_API_KEY to .env.local and restart.",
+          "The AI assistant is not configured. Add ANTHROPIC_API_KEY and restart.",
       },
       { status: 503 },
     );
@@ -58,7 +64,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: msg }, { status: 502 });
   }
 
-  // The model needs more detail — ask, don't store.
   if (meal.clarificationNeeded || meal.items.length === 0) {
     return NextResponse.json({
       ok: true,
@@ -69,12 +74,12 @@ export async function POST(req: Request) {
   }
 
   try {
-    await logMeal(meal);
+    await logMeal(user.id, meal);
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Could not save the meal.";
     return NextResponse.json({ ok: false, error: msg }, { status: 500 });
   }
 
-  const nutrition = await getTodayNutrition();
+  const nutrition = await getTodayNutrition(user.id);
   return NextResponse.json({ ok: true, meal, nutrition });
 }

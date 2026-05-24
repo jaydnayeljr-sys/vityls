@@ -1,8 +1,8 @@
-// Nutrition screen (server component). Loads the user's targets and anything
-// already logged today, then hands off to the client chat component.
+// Nutrition AI screen (server component).
 
 import AppShell from "@/components/AppShell";
 import NutritionChat from "./NutritionChat";
+import { requireUser } from "@/lib/session";
 import { getProfile } from "@/lib/profile-store";
 import { getTodayNutrition } from "@/lib/nutrition-store";
 import { deriveTargets } from "@/lib/calc";
@@ -12,12 +12,13 @@ import { supabaseConfigured } from "@/lib/supabase";
 export const dynamic = "force-dynamic";
 
 export default async function NutritionPage() {
-  const profile = await getProfile();
+  const user = await requireUser();
+  const profile = await getProfile(user.id);
   const targets = deriveTargets(profile);
-  const nutrition = await getTodayNutrition();
+  const nutrition = await getTodayNutrition(user.id);
 
   return (
-    <AppShell active="nutrition" userName={profile.name}>
+    <AppShell active="nutrition" userName={user.name}>
       <div className="topbar">
         <h1>Nutrition AI</h1>
         <p>
@@ -28,8 +29,8 @@ export default async function NutritionPage() {
 
       {!anthropicConfigured && (
         <div className="banner warn">
-          The AI assistant is not configured. Add <b>ANTHROPIC_API_KEY</b> to
-          <b> .env.local</b> and restart the app to enable meal logging.
+          The AI assistant is not configured. Add <b>ANTHROPIC_API_KEY</b> and
+          restart the app to enable meal logging.
         </div>
       )}
       {!supabaseConfigured && (

@@ -1,12 +1,12 @@
-// The persistent sidebar + main layout. Every destination is now live.
+// The persistent sidebar + main layout.
 
 import type { ReactNode } from "react";
 
 const NAV = [
-  { key: "today", label: "Today", soon: false, href: "/today" },
-  { key: "nutrition", label: "Nutrition AI", soon: false, href: "/nutrition" },
-  { key: "activity", label: "Activity", soon: false, href: "/activity" },
-  { key: "profile", label: "Profile", soon: false, href: "/profile" },
+  { key: "today", label: "Today", href: "/today" },
+  { key: "nutrition", label: "Nutrition AI", href: "/nutrition" },
+  { key: "activity", label: "Activity", href: "/activity" },
+  { key: "profile", label: "Profile", href: "/profile" },
 ];
 
 export default function AppShell({
@@ -18,44 +18,37 @@ export default function AppShell({
   userName: string;
   children: ReactNode;
 }) {
+  const display = userName?.trim() || "You";
   return (
     <div className="app">
       <aside className="sidebar">
         <div className="brand">
           <div className="mark">V</div>
           <div className="name">
-            Vitals<span>.</span>
+            Vityl<span>.</span>
           </div>
         </div>
 
         <div className="nav-label">Overview</div>
-        {NAV.map((n) => {
-          const cls =
-            "nav-item" +
-            (n.key === active ? " active" : "") +
-            (n.soon ? " soon" : "");
-          if (n.soon) {
-            return (
-              <div key={n.key} className={cls}>
-                {n.label}
-                <span className="tag">Soon</span>
-              </div>
-            );
-          }
-          return (
-            <a key={n.key} className={cls} href={n.href}>
-              {n.label}
-            </a>
-          );
-        })}
+        {NAV.map((n) => (
+          <a
+            key={n.key}
+            className={"nav-item" + (n.key === active ? " active" : "")}
+            href={n.href}
+          >
+            {n.label}
+          </a>
+        ))}
 
         <div className="spacer" />
         <div className="userchip">
-          <div className="av">{(userName || "J").charAt(0).toUpperCase()}</div>
+          <div className="av">{display.charAt(0).toUpperCase()}</div>
           <div className="meta">
-            <b>{userName || "You"}</b>
+            <b>{display}</b>
             <br />
-            <small>Vitals prototype</small>
+            <a className="logout-link" href="/api/auth/logout">
+              Sign out
+            </a>
           </div>
         </div>
       </aside>

@@ -1,5 +1,5 @@
-// Server-side read/write for synced activity data: daily metrics and sleep.
-// Written by the /api/sync ingest endpoint; read by the Activity screen.
+// Server-side read/write for a user's synced activity data: daily metrics and
+// sleep. Written by /api/sync; read by the Activity and Today screens.
 
 import "server-only";
 import { supabase, supabaseConfigured } from "./supabase";
@@ -15,8 +15,6 @@ import {
 } from "./activity-types";
 
 export type { ActivitySummary } from "./activity-types";
-
-// --- inputs from the sync endpoint -----------------------------------------
 
 export interface MetricInput {
   date: string;
@@ -35,8 +33,6 @@ export interface SleepInput {
   awakeMin?: number | null;
   score?: number | null;
 }
-
-// --- date helpers -----------------------------------------------------------
 
 function pad(x: number): string {
   return String(x).padStart(2, "0");
@@ -64,13 +60,15 @@ function numOrNull(v: unknown): number | null {
   return Number.isFinite(x) ? x : null;
 }
 
-// --- writes -----------------------------------------------------------------
-
-/** Upserts daily metrics; one row per (date, metric). Returns rows written. */
-export async function upsertMetrics(rows: MetricInput[]): Promise<number> {
+/** Upserts daily metrics for a user; one row per (date, metric). */
+export async function upsertMetrics(
+  userId: string,
+  rows: MetricInput[],
+): Promise<number> {
   if (!supabaseConfigured) throw new Error("Supabase is not configured.");
   if (rows.length === 0) return 0;
   const payload = rows.map((r) => ({
+    user_id: userId,
     metric_date: r.date,
     metric: r.metric,
     value: r.value,
@@ -79,16 +77,20 @@ export async function upsertMetrics(rows: MetricInput[]): Promise<number> {
   }));
   const { error } = await supabase
     .from("daily_metric")
-    .upsert(payload, { onConflict: "metric_date,metric" });
+    .upsert(payload, { onConflict: "user_id,metric_date,metric" });
   if (error) throw new Error(error.message);
   return payload.length;
 }
 
-/** Upserts sleep nights; one row per night. Returns rows written. */
-export async function upsertSleep(rows: SleepInput[]): Promise<number> {
+/** Upserts sleep nights for a user; one row per night. */
+export async function upsertSleep(
+  userId: string,
+  rows: SleepInput[],
+): Promise<number> {
   if (!supabaseConfigured) throw new Error("Supabase is not configured.");
   if (rows.length === 0) return 0;
   const payload = rows.map((r) => ({
+    user_id: userId,
     night_date: r.night,
     start_at: r.startAt ?? null,
     end_at: r.endAt ?? null,
@@ -101,12 +103,10 @@ export async function upsertSleep(rows: SleepInput[]): Promise<number> {
   }));
   const { error } = await supabase
     .from("sleep_session")
-    .upsert(payload, { onConflict: "night_date" });
+    .upsert(payload, { onConflict: "user_id,night_date" });
   if (error) throw new Error(error.message);
   return payload.length;
 }
-
-// --- reads ------------------------------------------------------------------
 
 function emptyDay(date: string): DayMetrics {
   return {
@@ -119,8 +119,9 @@ function emptyDay(date: string): DayMetrics {
   };
 }
 
-/** Sums logged food calories per calendar date in [start, end]. */
+/** Sums a user's logged food calories per calendar date in [start, end]. */
 async function caloriesByDate(
+  userId: string,
   start: string,
   end: string,
 ): Promise<Map<string, number>> {
@@ -129,6 +130,7 @@ async function caloriesByDate(
   const { data } = await supabase
     .from("food_log")
     .select("logged_for, food_item(calories)")
+    .eq("user_id", userId)
     .gte("logged_for", start)
     .lte("logged_for", end);
   for (const row of (data ?? []) as Record<string, unknown>[]) {
@@ -142,11 +144,9 @@ async function caloriesByDate(
   return out;
 }
 
-/**
- * Assembles everything the Activity screen needs for the last `days` days:
- * synced metrics, the most recent sleep night, and the intake-vs-burn series.
- */
+/** Assembles the Activity-screen data for a user over the last `days` days. */
 export async function getActivitySummary(
+  userId: string,
   profile: Profile,
   days = 7,
 ): Promise<ActivitySummary> {
@@ -164,6 +164,7 @@ export async function getActivitySummary(
     const { data: metricRows } = await supabase
       .from("daily_metric")
       .select("metric_date, metric, value")
+      .eq("user_id", userId)
       .gte("metric_date", start)
       .lte("metric_date", today);
     for (const row of (metricRows ?? []) as Record<string, unknown>[]) {
@@ -178,6 +179,7 @@ export async function getActivitySummary(
     const { data: sleepRows } = await supabase
       .from("sleep_session")
       .select("*")
+      .eq("user_id", userId)
       .lte("night_date", today)
       .order("night_date", { ascending: false })
       .limit(1);
@@ -196,7 +198,7 @@ export async function getActivitySummary(
     }
   }
 
-  const intake = await caloriesByDate(start, today);
+  const intake = await caloriesByDate(userId, start, today);
   const dayList = dates.map((d) => byDate.get(d) as DayMetrics);
   const { bmr } = resolveBmr(profile);
 

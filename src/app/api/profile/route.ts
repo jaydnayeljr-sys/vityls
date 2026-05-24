@@ -1,18 +1,29 @@
-// GET  /api/profile  — current profile + derived targets
+// GET  /api/profile  — the signed-in user's profile + derived targets
 // POST /api/profile  — save the profile, return freshly derived targets
 
 import { NextResponse } from "next/server";
 import { getProfile, saveProfile } from "@/lib/profile-store";
 import { deriveTargets } from "@/lib/calc";
 import { DEFAULT_PROFILE, type Profile } from "@/lib/types";
+import { getCurrentUser } from "@/lib/session";
+
+export const dynamic = "force-dynamic";
+
+function unauthorized() {
+  return NextResponse.json(
+    { ok: false, error: "Not signed in." },
+    { status: 401 },
+  );
+}
 
 export async function GET() {
-  const profile = await getProfile();
+  const user = await getCurrentUser();
+  if (!user) return unauthorized();
+  const profile = await getProfile(user.id);
   return NextResponse.json({ profile, targets: deriveTargets(profile) });
 }
 
-// Coerces an untrusted request body into a valid Profile.
-function sanitize(body: Record<string, unknown>): Profile {
+function sanitize(body: Record<string, unknown>, userId: string): Profile {
   const num = (v: unknown, fallback: number) => {
     const n = Number(v);
     return Number.isFinite(n) ? n : fallback;
@@ -37,8 +48,8 @@ function sanitize(body: Record<string, unknown>): Profile {
   const override = num(body.bmrOverride, NaN);
 
   return {
-    id: "me",
-    name: String(body.name ?? DEFAULT_PROFILE.name).slice(0, 80),
+    id: userId,
+    name: String(body.name ?? "").slice(0, 80),
     age: Math.max(10, Math.min(110, Math.round(num(body.age, DEFAULT_PROFILE.age)))),
     sex,
     heightCm: Math.max(80, Math.min(250, num(body.heightCm, DEFAULT_PROFILE.heightCm))),
@@ -53,6 +64,9 @@ function sanitize(body: Record<string, unknown>): Profile {
 }
 
 export async function POST(req: Request) {
+  const user = await getCurrentUser();
+  if (!user) return unauthorized();
+
   let body: Record<string, unknown>;
   try {
     body = await req.json();
@@ -60,9 +74,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "Bad request" }, { status: 400 });
   }
 
-  const profile = sanitize(body);
+  const profile = sanitize(body, user.id);
   try {
-    await saveProfile(profile);
+    await saveProfile(user.id, profile);
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Save failed";
     return NextResponse.json({ ok: false, error: msg }, { status: 500 });

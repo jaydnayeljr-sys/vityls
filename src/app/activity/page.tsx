@@ -7,6 +7,7 @@ import AppShell from "@/components/AppShell";
 import { getProfile } from "@/lib/profile-store";
 import { deriveTargets } from "@/lib/calc";
 import { getActivitySummary } from "@/lib/activity-store";
+import { requireUser } from "@/lib/session";
 import { supabaseConfigured } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
@@ -25,9 +26,10 @@ function weekday(s: string): string {
 }
 
 export default async function ActivityPage() {
-  const profile = await getProfile();
+  const user = await requireUser();
+  const profile = await getProfile(user.id);
   const targets = deriveTargets(profile);
-  const summary = await getActivitySummary(profile, 7);
+  const summary = await getActivitySummary(user.id, profile, 7);
 
   const t = summary.today;
   const sleep = summary.lastNight;
@@ -90,7 +92,7 @@ export default async function ActivityPage() {
   const hasSteps = stepDays.some((d) => d.steps != null);
 
   return (
-    <AppShell active="activity" userName={profile.name}>
+    <AppShell active="activity" userName={user.name}>
       <div className="topbar">
         <h1>Activity</h1>
         <p>

@@ -1,7 +1,11 @@
 import { redirect } from "next/navigation";
+import { getCurrentUser } from "@/lib/session";
 
-// The Today dashboard is the home screen — biological age, calorie balance,
-// macros, sleep and activity at a glance.
-export default function Home() {
-  redirect("/today");
+export const dynamic = "force-dynamic";
+
+// Signed-in visitors land on the Today dashboard; everyone else on the
+// landing page.
+export default async function Home() {
+  const user = await getCurrentUser();
+  redirect(user ? "/today" : "/login");
 }
