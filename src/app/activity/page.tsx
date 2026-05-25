@@ -33,7 +33,6 @@ export default async function ActivityPage() {
 
   const t = summary.today;
   const sleep = summary.lastNight;
-  const syncConfigured = Boolean(process.env.SYNC_TOKEN);
 
   const stats: { label: string; value: number | null; unit: string }[] = [
     { label: "Steps", value: t.steps, unit: "" },
@@ -107,17 +106,11 @@ export default async function ActivityPage() {
           shown.
         </div>
       )}
-      {supabaseConfigured && !syncConfigured && (
-        <div className="banner warn">
-          Activity sync is not configured yet. Add a <b>SYNC_TOKEN</b> to
-          <b> .env.local</b> — the Android companion app uses it to push Health
-          Connect data to <b>/api/sync</b>.
-        </div>
-      )}
-      {supabaseConfigured && syncConfigured && !summary.hasAnyData && (
+      {supabaseConfigured && !summary.hasAnyData && (
         <div className="banner ok">
-          Sync is ready. Waiting for the first push from the Vitals Android
-          companion app — once it sends data, it appears here automatically.
+          Waiting for the first push from the Vityl Android companion app. Add
+          your personal sync token from the Profile screen into the app — once
+          it sends data, it appears here automatically.
         </div>
       )}
 
