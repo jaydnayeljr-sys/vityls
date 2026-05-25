@@ -202,6 +202,16 @@ export async function getActivitySummary(
   const dayList = dates.map((d) => byDate.get(d) as DayMetrics);
   const { bmr } = resolveBmr(profile);
 
+  // Derive active calories when Health Connect only reported a daily total.
+  // Active energy = total energy out − resting energy (BMR), floored at zero.
+  // This keeps the Activity and Today screens populated for devices that log
+  // total calories but not a distinct ActiveCaloriesBurned record.
+  for (const d of dayList) {
+    if (d.active_kcal == null && d.total_kcal != null) {
+      d.active_kcal = Math.max(0, Math.round(d.total_kcal - bmr));
+    }
+  }
+
   const balance: DayBalance[] = dayList.map((d) => {
     let burn: number | null = null;
     if (d.total_kcal != null) {
