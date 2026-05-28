@@ -1,23 +1,14 @@
-// Profile screen body (server component). Includes the activity-sync token
-// the Vityl Android app uses. Rendered inside the desktop AppShell and the
-// mobile carousel.
+// Profile screen body (server component). Rendered inside the desktop
+// AppShell and the mobile carousel. The sync card now exposes a Manual Sync
+// button instead of a raw token — the Vityl app handles signing in.
 
 import ProfileForm from "@/app/profile/ProfileForm";
+import SyncButton from "@/app/profile/SyncButton";
 import { getProfile } from "@/lib/profile-store";
-import { getOrCreateSyncToken } from "@/lib/users-store";
 import { supabaseConfigured } from "@/lib/supabase";
 
 export default async function ProfileScreen({ userId }: { userId: string }) {
   const profile = await getProfile(userId);
-
-  let syncToken = "";
-  if (supabaseConfigured) {
-    try {
-      syncToken = await getOrCreateSyncToken(userId);
-    } catch {
-      syncToken = "";
-    }
-  }
 
   return (
     <>
@@ -38,23 +29,16 @@ export default async function ProfileScreen({ userId }: { userId: string }) {
 
       <ProfileForm initial={profile} canSave={supabaseConfigured} />
 
-      {syncToken && (
-        <div className="card" style={{ marginTop: 20 }}>
-          <div className="card-h">
-            <div className="t">Activity Sync</div>
-            <div className="x">
-              Connect the Vityl Android app to sync Health Connect data
-            </div>
+      <div className="card" style={{ marginTop: 20 }}>
+        <div className="card-h">
+          <div className="t">Activity Sync</div>
+          <div className="x">
+            Health Connect data flows in every 3 hours and each time you open
+            the Vityl app
           </div>
-          <p className="muted" style={{ fontSize: 13, lineHeight: 1.6 }}>
-            The Vityl app signs in with your account and syncs automatically —
-            no setup needed. This token is only for the older Vityl Bridge app:
-            paste it into its Sync Token field if you are still using it. Keep
-            it private — it grants write access to your activity data.
-          </p>
-          <code className="sync-token">{syncToken}</code>
         </div>
-      )}
+        <SyncButton />
+      </div>
     </>
   );
 }

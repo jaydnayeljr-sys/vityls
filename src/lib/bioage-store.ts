@@ -20,6 +20,9 @@ export interface BioAgeTrendPoint {
 export interface BioAgeReport {
   result: BioAgeResult;
   trend: BioAgeTrendPoint[];
+  /** Change in bio-age since the previous snapshot. Negative = improvement.
+   *  Null when there is no prior snapshot to compare against. */
+  dayDelta: number | null;
 }
 
 function average(values: number[]): number {
@@ -109,5 +112,12 @@ export async function getBioAgeReport(
     }
   }
 
-  return { result, trend };
+  let dayDelta: number | null = null;
+  if (trend.length >= 2) {
+    const last = trend[trend.length - 1];
+    const prev = trend[trend.length - 2];
+    dayDelta = Number((last.bioAge - prev.bioAge).toFixed(2));
+  }
+
+  return { result, trend, dayDelta };
 }

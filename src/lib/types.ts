@@ -25,18 +25,33 @@ export interface Profile {
   bmrOverride: number | null;
   energyGoal: EnergyGoal;
   energyAdjust: number;
+  // User overrides for the calorie / macro targets. Null = use the recommended
+  // value from the calculation engine. Set per-target (so a user can override
+  // only protein, for example).
+  customKcal: number | null;
+  customProteinG: number | null;
+  customCarbsG: number | null;
+  customFatG: number | null;
 }
 
 // Output of the calculation engine — never stored on the Profile itself.
+// "recommended*" are what the engine would set; "targetKcal" / "proteinG" /
+// "carbsG" / "fatG" are the active values the rest of the app uses (custom
+// override if set, otherwise the recommendation).
 export interface DerivedTargets {
   bmr: number;
   bmrMethod: string;
   tdee: number;
+  recommendedKcal: number;
+  recommendedProteinG: number;
+  recommendedCarbsG: number;
+  recommendedFatG: number;
   targetKcal: number;
   proteinG: number;
   carbsG: number;
   fatG: number;
   projectedWeeklyKg: number;
+  hasCustomTargets: boolean;
 }
 
 export const DEFAULT_PROFILE: Profile = {
@@ -52,6 +67,10 @@ export const DEFAULT_PROFILE: Profile = {
   bmrOverride: null,
   energyGoal: "deficit",
   energyAdjust: 400,
+  customKcal: null,
+  customProteinG: null,
+  customCarbsG: null,
+  customFatG: null,
 };
 
 export const ACTIVITY_LABELS: Record<ActivityLevel, string> = {

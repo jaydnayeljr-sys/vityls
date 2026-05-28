@@ -21,6 +21,12 @@ function rowToProfile(row: Record<string, unknown>): Profile {
     energyGoal:
       (row.energy_goal as Profile["energyGoal"]) ?? DEFAULT_PROFILE.energyGoal,
     energyAdjust: Number(row.energy_adjust ?? DEFAULT_PROFILE.energyAdjust),
+    customKcal: row.custom_kcal == null ? null : Number(row.custom_kcal),
+    customProteinG:
+      row.custom_protein_g == null ? null : Number(row.custom_protein_g),
+    customCarbsG:
+      row.custom_carbs_g == null ? null : Number(row.custom_carbs_g),
+    customFatG: row.custom_fat_g == null ? null : Number(row.custom_fat_g),
   };
 }
 
@@ -38,6 +44,10 @@ function profileToRow(userId: string, p: Profile): Record<string, unknown> {
     bmr_override: p.bmrOverride,
     energy_goal: p.energyGoal,
     energy_adjust: p.energyAdjust,
+    custom_kcal: p.customKcal,
+    custom_protein_g: p.customProteinG,
+    custom_carbs_g: p.customCarbsG,
+    custom_fat_g: p.customFatG,
     updated_at: new Date().toISOString(),
   };
 }

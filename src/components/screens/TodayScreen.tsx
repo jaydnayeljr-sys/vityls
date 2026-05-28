@@ -9,6 +9,7 @@ import { getActivitySummary } from "@/lib/activity-store";
 import { getBioAgeReport } from "@/lib/bioage-store";
 import { supabaseConfigured } from "@/lib/supabase";
 import type { BioAgeReport } from "@/lib/bioage-store";
+import type { LifetimeAverages } from "@/lib/activity-types";
 
 const fmt = (n: number) => Math.round(n).toLocaleString();
 
@@ -57,8 +58,11 @@ export default async function TodayScreen({ userId }: { userId: string }) {
       </div>
 
       <div className="act-2col" style={{ marginTop: 18 }}>
-        <SleepCard night={activity.lastNight} />
-        <ActivityCard today={activity.today} />
+        <SleepCard
+          night={activity.lastNight}
+          avgSleepMin={activity.averages.sleep_min}
+        />
+        <ActivityCard today={activity.today} averages={activity.averages} />
       </div>
     </>
   );
@@ -67,11 +71,29 @@ export default async function TodayScreen({ userId }: { userId: string }) {
 // --------------------------------------------------------------------------
 
 function BioAgeHero({ bio }: { bio: BioAgeReport }) {
-  const { result, trend } = bio;
+  const { result, trend, dayDelta } = bio;
   const delta = result.delta;
   const younger = delta < -0.1;
   const older = delta > 0.1;
   const tone = younger ? "good" : older ? "bad" : "even";
+
+  // Day-over-day movement (negative = bio age dropping = improvement).
+  let dayLine: { text: string; cls: string } | null = null;
+  if (dayDelta != null) {
+    if (dayDelta < -0.05) {
+      dayLine = {
+        text: `Down ${Math.abs(dayDelta).toFixed(2)} years since yesterday — your habits are working.`,
+        cls: "good",
+      };
+    } else if (dayDelta > 0.05) {
+      dayLine = {
+        text: `Up ${dayDelta.toFixed(2)} years since yesterday — worth a look at sleep, HRV and resting heart rate.`,
+        cls: "bad",
+      };
+    } else {
+      dayLine = { text: "No meaningful change since yesterday.", cls: "even" };
+    }
+  }
 
   return (
     <div className="card bioage-card">
@@ -109,6 +131,11 @@ function BioAgeHero({ bio }: { bio: BioAgeReport }) {
             <div className="bio-conf">
               {result.confidence} confidence · {result.inputsUsed} of 5 markers
             </div>
+            {dayLine && (
+              <div className={`bio-day-delta ${dayLine.cls}`}>
+                {dayLine.text}
+              </div>
+            )}
           </div>
 
           <div className="bioage-side">
@@ -359,6 +386,7 @@ function MacroCard({
 
 function SleepCard({
   night,
+  avgSleepMin,
 }: {
   night: {
     totalMin: number | null;
@@ -368,11 +396,15 @@ function SleepCard({
     awakeMin: number | null;
     score: number | null;
   } | null;
+  avgSleepMin: number | null;
 }) {
   return (
     <div className="card">
       <div className="card-h">
         <div className="t">Last Night&apos;s Sleep</div>
+        {avgSleepMin != null && (
+          <div className="x">Lifetime average {hm(avgSleepMin)} per night</div>
+        )}
       </div>
       {!night || night.totalMin == null ? (
         <p className="muted" style={{ fontSize: 12.5 }}>
@@ -452,6 +484,7 @@ function SleepBody({
 
 function ActivityCard({
   today,
+  averages,
 }: {
   today: {
     steps: number | null;
@@ -459,12 +492,23 @@ function ActivityCard({
     rhr: number | null;
     hrv: number | null;
   };
+  averages: LifetimeAverages;
 }) {
   const stats = [
-    { label: "Steps", value: today.steps, unit: "" },
-    { label: "Active kcal", value: today.active_kcal, unit: "" },
-    { label: "Resting HR", value: today.rhr, unit: "bpm" },
-    { label: "HRV", value: today.hrv, unit: "ms" },
+    { label: "Steps", value: today.steps, avg: averages.steps, unit: "" },
+    {
+      label: "Active kcal",
+      value: today.active_kcal,
+      avg: averages.active_kcal,
+      unit: "",
+    },
+    {
+      label: "Resting HR",
+      value: today.rhr,
+      avg: averages.rhr,
+      unit: "bpm",
+    },
+    { label: "HRV", value: today.hrv, avg: averages.hrv, unit: "ms" },
   ];
   return (
     <div className="card">
@@ -482,6 +526,12 @@ function ActivityCard({
               <div className="mini-val">
                 {fmt(s.value)}
                 {s.unit && <span>{s.unit}</span>}
+              </div>
+            )}
+            {s.avg != null && (
+              <div className="mini-avg">
+                avg {fmt(s.avg)}
+                {s.unit}
               </div>
             )}
           </div>

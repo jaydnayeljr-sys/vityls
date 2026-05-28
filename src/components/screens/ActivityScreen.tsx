@@ -27,12 +27,23 @@ export default async function ActivityScreen({ userId }: { userId: string }) {
 
   const t = summary.today;
   const sleep = summary.lastNight;
+  const avg = summary.averages;
 
-  const stats: { label: string; value: number | null; unit: string }[] = [
-    { label: "Steps", value: t.steps, unit: "" },
-    { label: "Active Calories", value: t.active_kcal, unit: "kcal" },
-    { label: "Resting HR", value: t.rhr, unit: "bpm" },
-    { label: "HRV", value: t.hrv, unit: "ms" },
+  const stats: {
+    label: string;
+    value: number | null;
+    avg: number | null;
+    unit: string;
+  }[] = [
+    { label: "Steps", value: t.steps, avg: avg.steps, unit: "" },
+    {
+      label: "Active Calories",
+      value: t.active_kcal,
+      avg: avg.active_kcal,
+      unit: "kcal",
+    },
+    { label: "Resting HR", value: t.rhr, avg: avg.rhr, unit: "bpm" },
+    { label: "HRV", value: t.hrv, avg: avg.hrv, unit: "ms" },
   ];
 
   // --- 7-day calorie balance chart geometry --------------------------------
@@ -63,6 +74,9 @@ export default async function ActivityScreen({ userId }: { userId: string }) {
     const cx = padL + slot * i + slot / 2;
     const intakeH = (b.intakeKcal / maxVal) * plotH;
     const burnH = b.burnKcal != null ? (b.burnKcal / maxVal) * plotH : null;
+    // Net energy = intake - burn. Negative = deficit, positive = surplus.
+    const showDelta = b.burnKcal != null && b.intakeKcal > 0;
+    const net = showDelta ? b.intakeKcal - (b.burnKcal ?? 0) : null;
     return {
       date: b.date,
       label: weekday(b.date),
@@ -74,6 +88,8 @@ export default async function ActivityScreen({ userId }: { userId: string }) {
       bx: cx + 2,
       by: burnH != null ? baseY - burnH : 0,
       burnH,
+      net,
+      deltaY: baseY - Math.max(intakeH, burnH ?? 0) - 8,
     };
   });
   const hasIntake = balance.some((b) => b.intakeKcal > 0);
@@ -102,9 +118,8 @@ export default async function ActivityScreen({ userId }: { userId: string }) {
       )}
       {supabaseConfigured && !summary.hasAnyData && (
         <div className="banner ok">
-          Waiting for the first push from the Vityl Android companion app. Add
-          your personal sync token from the Profile screen into the app — once
-          it sends data, it appears here automatically.
+          Waiting for the first push from the Vityl Android companion app. Sign
+          in on the app — once it sends data, it appears here automatically.
         </div>
       )}
 
@@ -126,6 +141,12 @@ export default async function ActivityScreen({ userId }: { userId: string }) {
                 </div>
                 <div className="sh">today</div>
               </>
+            )}
+            {s.avg != null && (
+              <div className="sh stat-avg">
+                Lifetime avg {fmt(s.avg)}
+                {s.unit ? ` ${s.unit}` : ""}
+              </div>
             )}
           </div>
         ))}
@@ -192,6 +213,19 @@ export default async function ActivityScreen({ userId }: { userId: string }) {
                       rx="3"
                       fill="var(--blue)"
                     />
+                  )}
+                  {b.net != null && (
+                    <text
+                      x={b.cx}
+                      y={b.deltaY}
+                      textAnchor="middle"
+                      fill={b.net <= 0 ? "var(--green)" : "var(--amber)"}
+                      fontSize="11"
+                      fontWeight="700"
+                    >
+                      {b.net > 0 ? "+" : ""}
+                      {fmt(b.net)}
+                    </text>
                   )}
                   <text
                     x={b.cx}

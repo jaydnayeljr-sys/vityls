@@ -41,11 +41,22 @@ export interface DayBalance {
   burnKcal: number | null; // total energy out — synced, or BMR + active kcal
 }
 
+/** Per-metric averages across every day the user has ever synced. */
+export interface LifetimeAverages {
+  steps: number | null;
+  active_kcal: number | null;
+  total_kcal: number | null;
+  rhr: number | null;
+  hrv: number | null;
+  sleep_min: number | null;
+}
+
 /** Everything the Activity screen needs for the last N days. */
 export interface ActivitySummary {
   days: DayMetrics[]; // oldest first
   today: DayMetrics;
   lastNight: SleepNight | null;
   balance: DayBalance[];
+  averages: LifetimeAverages;
   hasAnyData: boolean; // true once any metric or sleep row exists
 }
