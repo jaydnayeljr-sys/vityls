@@ -1,7 +1,8 @@
 // Today dashboard body (server component). Rendered inside the desktop
 // AppShell and inside the mobile carousel. Visual hierarchy: biological age,
-// then calorie balance, macros, sleep and activity.
+// then calorie balance (today + week), macros, sleep and activity.
 
+import CalorieBalanceChart from "@/components/CalorieBalanceChart";
 import { getProfile } from "@/lib/profile-store";
 import { deriveTargets } from "@/lib/calc";
 import { getTodayNutrition } from "@/lib/nutrition-store";
@@ -32,6 +33,10 @@ export default async function TodayScreen({ userId }: { userId: string }) {
     month: "long",
   });
 
+  // Today's burn: last entry of the balance array (oldest first → newest last).
+  const todayBalance = activity.balance[activity.balance.length - 1];
+  const todayBurn = todayBalance?.burnKcal ?? null;
+
   return (
     <>
       <div className="topbar">
@@ -49,12 +54,28 @@ export default async function TodayScreen({ userId }: { userId: string }) {
       <BioAgeHero bio={bio} />
 
       <div className="act-2col">
-        <CalorieCard
-          eaten={nutrition.totals.calories}
+        <CalorieBalanceCard
+          intake={nutrition.totals.calories}
+          burn={todayBurn}
           target={targets.targetKcal}
+          tdee={targets.tdee}
           goal={profile.energyGoal}
         />
         <MacroCard totals={nutrition.totals} targets={targets} />
+      </div>
+
+      <div className="card chart-card" style={{ marginTop: 18 }}>
+        <div className="card-h">
+          <div className="t">Last 7 days — Intake vs Burn</div>
+          <div className="x">
+            Each day&apos;s net energy labelled above the bars (deficit green,
+            surplus amber)
+          </div>
+        </div>
+        <CalorieBalanceChart
+          balance={activity.balance}
+          targetKcal={targets.targetKcal}
+        />
       </div>
 
       <div className="act-2col" style={{ marginTop: 18 }}>
@@ -77,7 +98,6 @@ function BioAgeHero({ bio }: { bio: BioAgeReport }) {
   const older = delta > 0.1;
   const tone = younger ? "good" : older ? "bad" : "even";
 
-  // Day-over-day movement (negative = bio age dropping = improvement).
   let dayLine: { text: string; cls: string } | null = null;
   if (dayDelta != null) {
     if (dayDelta < -0.05) {
@@ -286,42 +306,125 @@ function BioTrend({ trend }: { trend: BioAgeReport["trend"] }) {
   );
 }
 
-function CalorieCard({
-  eaten,
+function CalorieBalanceCard({
+  intake,
+  burn,
   target,
+  tdee,
   goal,
 }: {
-  eaten: number;
+  intake: number;
+  burn: number | null;
   target: number;
+  tdee: number;
   goal: string;
 }) {
-  const remaining = target - eaten;
-  const over = remaining < 0;
-  const pct = target > 0 ? Math.min(100, (eaten / target) * 100) : 0;
+  const intakePct = target > 0 ? Math.min(100, (intake / target) * 100) : 0;
+  const burnPct =
+    tdee > 0 && burn != null ? Math.min(100, (burn / tdee) * 100) : null;
+  const net = burn != null ? intake - burn : null;
+
+  let netLabel: string;
+  let netTone: "good" | "warn" | "even";
+  if (net == null) {
+    netLabel = "Waiting for sync";
+    netTone = "even";
+  } else if (Math.abs(net) < 50) {
+    netLabel = `Maintenance — within ${fmt(Math.abs(net))} kcal of balance`;
+    netTone = "even";
+  } else if (net < 0) {
+    netLabel = `Deficit ${fmt(Math.abs(net))} kcal — your habits are on track`;
+    netTone = "good";
+  } else {
+    netLabel = `Surplus +${fmt(net)} kcal`;
+    netTone = "warn";
+  }
+
+  // Diverging bar scale — at least ±1000 so small swings aren't crowded.
+  const scale = Math.max(1000, Math.abs(net ?? 0) * 1.4);
+  const netPct = net != null ? (Math.abs(net) / scale) * 50 : 0;
+
   return (
     <div className="card">
       <div className="card-h">
-        <div className="t">Calorie Balance</div>
-        <div className="x">vs. your {goal} target</div>
-      </div>
-      <div className="balance">
-        <div className="balance-num">
-          <b className={over ? "over" : ""}>{fmt(Math.abs(remaining))}</b>
-          <span>{over ? "kcal over target" : "kcal remaining"}</span>
+        <div className="t">Calorie Balance Today</div>
+        <div className="x">
+          Eaten vs burned — your {goal} target is {fmt(target)} kcal
         </div>
       </div>
-      <div className="bigtrack">
-        <div
-          className="bigtrack-fill"
-          style={{
-            width: `${pct}%`,
-            background: over ? "var(--red)" : "var(--green)",
-          }}
-        />
+
+      <div className="cb-row">
+        <div className="cb-row-h">
+          <span>Intake</span>
+          <span className="cb-row-v">
+            <b>{fmt(intake)}</b> / {fmt(target)} kcal
+          </span>
+        </div>
+        <div className="bigtrack">
+          <div
+            className="bigtrack-fill"
+            style={{
+              width: `${intakePct}%`,
+              background: intake > target ? "var(--red)" : "var(--green)",
+            }}
+          />
+        </div>
       </div>
-      <div className="track-cap">
-        <span>{fmt(eaten)} eaten</span>
-        <span>{fmt(target)} target</span>
+
+      <div className="cb-row">
+        <div className="cb-row-h">
+          <span>Burn</span>
+          <span className="cb-row-v">
+            {burn != null ? (
+              <>
+                <b>{fmt(burn)}</b> / {fmt(tdee)} kcal
+              </>
+            ) : (
+              <span className="muted">—</span>
+            )}
+          </span>
+        </div>
+        <div className="bigtrack">
+          {burnPct != null && (
+            <div
+              className="bigtrack-fill"
+              style={{ width: `${burnPct}%`, background: "var(--blue)" }}
+            />
+          )}
+        </div>
+      </div>
+
+      <div className="cb-row cb-net">
+        <div className="cb-row-h">
+          <span>Net</span>
+          <span className={`net-label ${netTone}`}>{netLabel}</span>
+        </div>
+        <div className="net-track">
+          <span className="net-zero" />
+          {net != null && (
+            <span
+              className="net-fill"
+              style={
+                net <= 0
+                  ? {
+                      right: "50%",
+                      width: `${netPct}%`,
+                      background: "var(--green)",
+                    }
+                  : {
+                      left: "50%",
+                      width: `${netPct}%`,
+                      background: "var(--amber)",
+                    }
+              }
+            />
+          )}
+        </div>
+        <div className="net-scale">
+          <span>−{fmt(scale)}</span>
+          <span>0</span>
+          <span>+{fmt(scale)}</span>
+        </div>
       </div>
     </div>
   );
