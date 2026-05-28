@@ -10,11 +10,12 @@ import {
   type ActivitySummary,
   type DayBalance,
   type DayMetrics,
+  type LifetimeAverages,
   type MetricKey,
   type SleepNight,
 } from "./activity-types";
 
-export type { ActivitySummary } from "./activity-types";
+export type { ActivitySummary, LifetimeAverages } from "./activity-types";
 
 export interface MetricInput {
   date: string;
@@ -117,6 +118,62 @@ function emptyDay(date: string): DayMetrics {
     rhr: null,
     hrv: null,
   };
+}
+
+function emptyAverages(): LifetimeAverages {
+  return {
+    steps: null,
+    active_kcal: null,
+    total_kcal: null,
+    rhr: null,
+    hrv: null,
+    sleep_min: null,
+  };
+}
+
+/** Average value per metric across every day the user has synced. */
+export async function getLifetimeAverages(
+  userId: string,
+): Promise<LifetimeAverages> {
+  const out = emptyAverages();
+  if (!supabaseConfigured) return out;
+
+  const { data: metricRows } = await supabase
+    .from("daily_metric")
+    .select("metric, value")
+    .eq("user_id", userId)
+    .in("metric", METRIC_KEYS as readonly string[]);
+
+  const sums: Record<string, { total: number; count: number }> = {};
+  for (const row of (metricRows ?? []) as Record<string, unknown>[]) {
+    const metric = String(row.metric);
+    const value = Number(row.value);
+    if (!Number.isFinite(value)) continue;
+    if (!sums[metric]) sums[metric] = { total: 0, count: 0 };
+    sums[metric].total += value;
+    sums[metric].count += 1;
+  }
+  for (const k of METRIC_KEYS) {
+    const s = sums[k];
+    if (s && s.count > 0) {
+      out[k] = Math.round(s.total / s.count);
+    }
+  }
+
+  const { data: sleepRows } = await supabase
+    .from("sleep_session")
+    .select("total_min")
+    .eq("user_id", userId);
+  const sleepValues = ((sleepRows ?? []) as Record<string, unknown>[])
+    .map((r) => Number(r.total_min))
+    .filter((v) => Number.isFinite(v) && v > 0);
+  if (sleepValues.length > 0) {
+    out.sleep_min = Math.round(
+      sleepValues.reduce((s, v) => s + v, 0) / sleepValues.length,
+    );
+  }
+
+  return out;
 }
 
 /** Sums a user's logged food calories per calendar date in [start, end]. */
@@ -226,11 +283,14 @@ export async function getActivitySummary(
     };
   });
 
+  const averages = await getLifetimeAverages(userId);
+
   return {
     days: dayList,
     today: byDate.get(today) as DayMetrics,
     lastNight,
     balance,
+    averages,
     hasAnyData,
   };
 }

@@ -47,6 +47,14 @@ function sanitize(body: Record<string, unknown>, userId: string): Profile {
   const vo2 = num(body.vo2max, NaN);
   const override = num(body.bmrOverride, NaN);
 
+  // Optional per-target overrides. Treat 0 or missing as "use recommendation".
+  const optTarget = (raw: unknown, min: number, max: number) => {
+    if (raw == null || raw === "") return null;
+    const n = Number(raw);
+    if (!Number.isFinite(n) || n <= 0) return null;
+    return Math.min(max, Math.max(min, Math.round(n)));
+  };
+
   return {
     id: userId,
     name: String(body.name ?? "").slice(0, 80),
@@ -60,6 +68,10 @@ function sanitize(body: Record<string, unknown>, userId: string): Profile {
     bmrOverride: Number.isFinite(override) && override > 0 ? Math.round(override) : null,
     energyGoal: goal as Profile["energyGoal"],
     energyAdjust: Math.max(0, Math.min(1200, Math.round(num(body.energyAdjust, 400)))),
+    customKcal: optTarget(body.customKcal, 800, 6000),
+    customProteinG: optTarget(body.customProteinG, 20, 500),
+    customCarbsG: optTarget(body.customCarbsG, 0, 800),
+    customFatG: optTarget(body.customFatG, 20, 300),
   };
 }
 

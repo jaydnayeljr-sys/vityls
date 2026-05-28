@@ -92,18 +92,24 @@ export default function LandingPage() {
       <section className="download" id="download">
         <h2>Get the Vityl mobile app</h2>
         <p>
-          The Vityl companion app keeps your dashboard in sync and puts your
-          whole health picture in your pocket. It reads steps, heart rate, HRV
-          and sleep from Health Connect on Android and streams them to your
-          account automatically.
+          The Vityl Android app keeps your dashboard in sync and puts your
+          whole health picture in your pocket. Sign in once — it reads steps,
+          heart rate, HRV and sleep from Health Connect and streams them to
+          your account automatically.
         </p>
         <div className="download-card">
           <div className="download-meta">
             <b>Vityl for Android</b>
-            <span>Background Health Connect sync · coming soon</span>
+            <span>APK · Android 9.0+ · Health Connect required</span>
           </div>
-          <span className="download-btn disabled">Coming soon</span>
+          <a className="download-btn" href="/vityl.apk" download>
+            Download APK
+          </a>
         </div>
+        <p className="download-note">
+          After the download finishes, open the file and allow your browser to
+          install apps when Android asks. Then sign in with your Vityl account.
+        </p>
       </section>
 
       <footer className="landing-foot">

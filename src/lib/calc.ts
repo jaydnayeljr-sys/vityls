@@ -119,25 +119,57 @@ export function projectedWeeklyKg(
   return Number((kg * sign).toFixed(2));
 }
 
-/** Runs the whole engine for a profile and returns every derived value. */
+/** Runs the whole engine for a profile and returns every derived value.
+ *  When the user has set a custom override for any target, that value wins;
+ *  otherwise the engine's recommendation is used. The recommendations remain
+ *  available alongside so the Profile screen can show them as reference. */
 export function deriveTargets(p: Profile): DerivedTargets {
   const { bmr, method } = resolveBmr(p);
   const tdeeValue = tdee(bmr, p.activityLevel);
-  const targetKcal = targetCalories(tdeeValue, p.energyGoal, p.energyAdjust);
-  const { proteinG, carbsG, fatG } = macroTargets(
-    p.weightKg,
-    targetKcal,
+  const recommendedKcal = targetCalories(
+    tdeeValue,
     p.energyGoal,
+    p.energyAdjust,
   );
+  const {
+    proteinG: recommendedProteinG,
+    carbsG: recommendedCarbsG,
+    fatG: recommendedFatG,
+  } = macroTargets(p.weightKg, recommendedKcal, p.energyGoal);
+
+  const targetKcal =
+    p.customKcal != null && p.customKcal > 0 ? p.customKcal : recommendedKcal;
+  const proteinG =
+    p.customProteinG != null && p.customProteinG >= 0
+      ? p.customProteinG
+      : recommendedProteinG;
+  const carbsG =
+    p.customCarbsG != null && p.customCarbsG >= 0
+      ? p.customCarbsG
+      : recommendedCarbsG;
+  const fatG =
+    p.customFatG != null && p.customFatG >= 0 ? p.customFatG : recommendedFatG;
+
+  const hasCustomTargets =
+    p.customKcal != null ||
+    p.customProteinG != null ||
+    p.customCarbsG != null ||
+    p.customFatG != null;
+
   return {
     bmr,
     bmrMethod: method,
     tdee: tdeeValue,
+    recommendedKcal,
+    recommendedProteinG,
+    recommendedCarbsG,
+    recommendedFatG,
     targetKcal,
     proteinG,
     carbsG,
     fatG,
     projectedWeeklyKg: projectedWeeklyKg(p.energyAdjust, p.energyGoal),
+    hasCustomTargets,
   };
 }
 

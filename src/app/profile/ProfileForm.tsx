@@ -74,6 +74,60 @@ export default function ProfileForm({
     "very_active",
   ];
 
+  const targetRows = [
+    {
+      key: "customKcal" as const,
+      label: "Calories",
+      unit: "kcal",
+      rec: targets.recommendedKcal,
+      active: targets.targetKcal,
+      value: p.customKcal,
+      rationale:
+        p.energyGoal === "maintenance"
+          ? "Matched to expenditure"
+          : `${p.energyGoal === "deficit" ? "Deficit" : "Surplus"}: ${p.energyGoal === "deficit" ? "−" : "+"}${fmt(p.energyAdjust)} kcal/day vs maintenance`,
+      accent:
+        p.energyGoal === "deficit"
+          ? "var(--green)"
+          : p.energyGoal === "surplus"
+            ? "var(--amber)"
+            : "var(--text)",
+    },
+    {
+      key: "customProteinG" as const,
+      label: "Protein",
+      unit: "g",
+      rec: targets.recommendedProteinG,
+      active: targets.proteinG,
+      value: p.customProteinG,
+      rationale:
+        p.energyGoal === "deficit"
+          ? "2.2 g/kg — protects lean mass in a deficit"
+          : "1.6 g/kg bodyweight",
+      accent: "var(--blue)",
+    },
+    {
+      key: "customCarbsG" as const,
+      label: "Carbohydrate",
+      unit: "g",
+      rec: targets.recommendedCarbsG,
+      active: targets.carbsG,
+      value: p.customCarbsG,
+      rationale: "Remaining energy budget after protein and fat",
+      accent: "var(--amber)",
+    },
+    {
+      key: "customFatG" as const,
+      label: "Fat",
+      unit: "g",
+      rec: targets.recommendedFatG,
+      active: targets.fatG,
+      value: p.customFatG,
+      rationale: "0.8 g/kg floor for hormone health",
+      accent: "var(--violet)",
+    },
+  ];
+
   return (
     <>
       {status && (
@@ -325,75 +379,78 @@ export default function ProfileForm({
 
           <div className="card">
             <div className="card-h">
-              <div className="t">Computed Targets</div>
-              <div className="x">Recalculated live from your inputs</div>
-            </div>
-            <div className="targets">
-              <div className="tg">
-                <span>
-                  Maintenance (TDEE)
-                  <br />
-                  <span className="src">BMR × activity factor</span>
-                </span>
-                <b>{fmt(targets.tdee)} kcal</b>
-              </div>
-              <div className="tg">
-                <span>
-                  Target intake
-                  <br />
-                  <span className="src">
-                    {p.energyGoal === "maintenance"
-                      ? "matched to expenditure"
-                      : `${p.energyGoal}: ${p.energyGoal === "deficit" ? "−" : "+"}${fmt(p.energyAdjust)} kcal/day`}
-                  </span>
-                </span>
-                <b
-                  style={{
-                    color:
-                      p.energyGoal === "deficit"
-                        ? "var(--green)"
-                        : p.energyGoal === "surplus"
-                          ? "var(--amber)"
-                          : "var(--text)",
-                  }}
-                >
-                  {fmt(targets.targetKcal)} kcal
-                </b>
-              </div>
-              <div className="tg">
-                <span>
-                  Protein
-                  <br />
-                  <span className="src">
-                    {p.energyGoal === "deficit"
-                      ? "2.2 g/kg — protects lean mass in a deficit"
-                      : "1.6 g/kg bodyweight"}
-                  </span>
-                </span>
-                <b>{fmt(targets.proteinG)} g</b>
-              </div>
-              <div className="tg">
-                <span>
-                  Carbohydrate
-                  <br />
-                  <span className="src">remaining energy budget</span>
-                </span>
-                <b>{fmt(targets.carbsG)} g</b>
-              </div>
-              <div className="tg">
-                <span>
-                  Fat
-                  <br />
-                  <span className="src">0.8 g/kg floor for hormones</span>
-                </span>
-                <b>{fmt(targets.fatG)} g</b>
+              <div className="t">Your Daily Targets</div>
+              <div className="x">
+                Vityl&apos;s recommendation is shown as a reference — set your
+                own value to override any target.
               </div>
             </div>
+
+            <div className="tg" style={{ borderBottom: "1px solid var(--border-soft)" }}>
+              <span>
+                Maintenance (TDEE)
+                <br />
+                <span className="src">BMR × activity factor — read-only</span>
+              </span>
+              <b>{fmt(targets.tdee)} kcal</b>
+            </div>
+
+            {targetRows.map((row) => {
+              const overridden = row.value != null;
+              return (
+                <div className="tg-row" key={row.key}>
+                  <div className="tg-row-h">
+                    <div>
+                      <b>{row.label}</b>
+                      <small className="tg-rec">
+                        Vityl recommends{" "}
+                        <b>{fmt(row.rec)} {row.unit}</b> · {row.rationale}
+                      </small>
+                    </div>
+                    <div className="tg-input">
+                      <input
+                        className="inp"
+                        type="number"
+                        inputMode="numeric"
+                        placeholder={String(Math.round(row.rec))}
+                        value={row.value ?? ""}
+                        onChange={(e) =>
+                          set(
+                            row.key,
+                            e.target.value === ""
+                              ? null
+                              : Number(e.target.value),
+                          )
+                        }
+                      />
+                      <span className="tg-unit">{row.unit}</span>
+                    </div>
+                  </div>
+                  <div className="tg-active">
+                    <span style={{ color: overridden ? row.accent : "var(--text-3)" }}>
+                      Active: <b>{fmt(row.active)} {row.unit}</b>
+                      {overridden ? " — your value" : " — using recommendation"}
+                    </span>
+                    {overridden && (
+                      <button
+                        type="button"
+                        className="reset-btn"
+                        onClick={() => set(row.key, null)}
+                      >
+                        Reset to recommended
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+
             <button
               className="save-btn"
               onClick={save}
               disabled={busy || !canSave}
               title={canSave ? "" : "Configure Supabase to enable saving"}
+              style={{ marginTop: 18 }}
             >
               {busy ? "Saving…" : canSave ? "Save profile" : "Saving disabled — set up Supabase"}
             </button>
