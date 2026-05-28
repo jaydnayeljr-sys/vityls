@@ -824,3 +824,37 @@ a { color: inherit; text-decoration: none; }
   font-family: inherit; cursor: pointer;
 }
 .reset-btn:hover { color: var(--text); border-color: var(--text-3); }
+
+/* ---------- Wave 7.2: Calorie Balance Today card (3 bars) ---------------- */
+
+.cb-row { margin-bottom: 14px; }
+.cb-row:last-of-type { margin-bottom: 0; }
+.cb-row-h {
+  display: flex; justify-content: space-between; align-items: baseline;
+  margin-bottom: 6px;
+  font-size: 12.5px; font-weight: 600; color: var(--text-2);
+}
+.cb-row-h span:first-child {
+  letter-spacing: 0.04em; text-transform: uppercase;
+  font-size: 11.5px; color: var(--text-3);
+}
+.cb-row-v b { font-size: 14px; font-weight: 800; color: var(--text); }
+
+.cb-net { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--border-soft); }
+.net-label.good { color: var(--green); font-weight: 700; }
+.net-label.warn { color: var(--amber); font-weight: 700; }
+.net-label.even { color: var(--text-3); }
+
+.net-track {
+  position: relative; height: 10px; border-radius: 99px;
+  background: var(--surface-3); margin-top: 4px;
+}
+.net-zero {
+  position: absolute; left: 50%; top: -3px; width: 1px; height: 16px;
+  background: var(--border);
+}
+.net-fill { position: absolute; top: 0; height: 100%; border-radius: 99px; }
+.net-scale {
+  display: flex; justify-content: space-between; margin-top: 6px;
+  font-size: 10.5px; color: var(--text-3); font-weight: 600;
+}
