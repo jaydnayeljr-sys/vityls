@@ -1,11 +1,14 @@
 // GET  /api/profile  — the signed-in user's profile + derived targets
-// POST /api/profile  — save the profile, return freshly derived targets
+// POST /api/profile  — save the profile, return freshly derived targets.
+//                      Also appends a biometric_log row for any weight /
+//                      body-fat / VO2max value that changed.
 
 import { NextResponse } from "next/server";
 import { getProfile, saveProfile } from "@/lib/profile-store";
 import { deriveTargets } from "@/lib/calc";
 import { DEFAULT_PROFILE, type Profile } from "@/lib/types";
 import { getCurrentUser } from "@/lib/session";
+import { logBiometric } from "@/lib/biometric-store";
 
 export const dynamic = "force-dynamic";
 
@@ -47,7 +50,6 @@ function sanitize(body: Record<string, unknown>, userId: string): Profile {
   const vo2 = num(body.vo2max, NaN);
   const override = num(body.bmrOverride, NaN);
 
-  // Optional per-target overrides. Treat 0 or missing as "use recommendation".
   const optTarget = (raw: unknown, min: number, max: number) => {
     if (raw == null || raw === "") return null;
     const n = Number(raw);
@@ -75,6 +77,13 @@ function sanitize(body: Record<string, unknown>, userId: string): Profile {
   };
 }
 
+/** True if `next` represents a change worth recording in biometric_log. */
+function changed(prev: number | null, next: number | null): boolean {
+  if (next == null) return false;            // user cleared the field
+  if (prev == null) return true;             // first time setting it
+  return Math.abs(next - prev) > 0.001;      // ignore float jitter
+}
+
 export async function POST(req: Request) {
   const user = await getCurrentUser();
   if (!user) return unauthorized();
@@ -86,12 +95,27 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "Bad request" }, { status: 400 });
   }
 
+  // Snapshot the previous biometrics so we know what to log.
+  const previous = await getProfile(user.id);
   const profile = sanitize(body, user.id);
+
   try {
     await saveProfile(user.id, profile);
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Save failed";
     return NextResponse.json({ ok: false, error: msg }, { status: 500 });
   }
+
+  // Record any biometric changes — fire-and-forget so save latency stays low.
+  if (changed(previous.weightKg, profile.weightKg)) {
+    void logBiometric(user.id, "weight", profile.weightKg);
+  }
+  if (changed(previous.bodyFatPct, profile.bodyFatPct)) {
+    void logBiometric(user.id, "body_fat", profile.bodyFatPct!);
+  }
+  if (changed(previous.vo2max, profile.vo2max)) {
+    void logBiometric(user.id, "vo2max", profile.vo2max!);
+  }
+
   return NextResponse.json({ ok: true, profile, targets: deriveTargets(profile) });
 }

@@ -4,11 +4,14 @@
 
 import ProfileForm from "@/app/profile/ProfileForm";
 import SyncButton from "@/app/profile/SyncButton";
+import BiometricTrends from "@/components/BiometricTrends";
 import { getProfile } from "@/lib/profile-store";
+import { getBiometricHistory } from "@/lib/biometric-store";
 import { supabaseConfigured } from "@/lib/supabase";
 
 export default async function ProfileScreen({ userId }: { userId: string }) {
   const profile = await getProfile(userId);
+  const biometricHistory = await getBiometricHistory(userId);
 
   return (
     <>
@@ -28,6 +31,15 @@ export default async function ProfileScreen({ userId }: { userId: string }) {
       )}
 
       <ProfileForm initial={profile} canSave={supabaseConfigured} />
+
+      <BiometricTrends
+        history={biometricHistory}
+        current={{
+          weightKg: profile.weightKg,
+          bodyFatPct: profile.bodyFatPct,
+          vo2max: profile.vo2max,
+        }}
+      />
 
       <div className="card" style={{ marginTop: 20 }}>
         <div className="card-h">
