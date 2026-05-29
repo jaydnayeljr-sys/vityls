@@ -1,13 +1,16 @@
 // Today dashboard body (server component). Rendered inside the desktop
 // AppShell and inside the mobile carousel. Visual hierarchy: biological age,
-// then calorie balance (today + week), macros, sleep and activity.
+// yesterday's AI review, calorie balance (today + week), macros, sleep,
+// activity.
 
 import CalorieBalanceChart from "@/components/CalorieBalanceChart";
+import DailyReviewCard from "@/components/DailyReviewCard";
 import { getProfile } from "@/lib/profile-store";
 import { deriveTargets } from "@/lib/calc";
 import { getTodayNutrition } from "@/lib/nutrition-store";
 import { getActivitySummary } from "@/lib/activity-store";
 import { getBioAgeReport } from "@/lib/bioage-store";
+import { getYesterdayReview } from "@/lib/review-store";
 import { supabaseConfigured } from "@/lib/supabase";
 import type { BioAgeReport } from "@/lib/bioage-store";
 import type { LifetimeAverages } from "@/lib/activity-types";
@@ -26,6 +29,8 @@ export default async function TodayScreen({ userId }: { userId: string }) {
   const nutrition = await getTodayNutrition(userId);
   const activity = await getActivitySummary(userId, profile, 7);
   const bio = await getBioAgeReport(userId, profile);
+  // Generates yesterday's review on first load of the day, else returns cached.
+  const review = await getYesterdayReview(userId, profile);
 
   const today = new Date().toLocaleDateString("en-US", {
     weekday: "long",
@@ -52,6 +57,8 @@ export default async function TodayScreen({ userId }: { userId: string }) {
       )}
 
       <BioAgeHero bio={bio} />
+
+      {review && <DailyReviewCard review={review} />}
 
       <div className="act-2col">
         <CalorieBalanceCard
@@ -340,7 +347,6 @@ function CalorieBalanceCard({
     netTone = "warn";
   }
 
-  // Diverging bar scale — at least ±1000 so small swings aren't crowded.
   const scale = Math.max(1000, Math.abs(net ?? 0) * 1.4);
   const netPct = net != null ? (Math.abs(net) / scale) * 50 : 0;
 
