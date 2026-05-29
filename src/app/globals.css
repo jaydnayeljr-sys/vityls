@@ -894,3 +894,55 @@ a { color: inherit; text-decoration: none; }
   .bm-grid { grid-template-columns: 1fr; }
 }
 .m-panel .bm-grid { grid-template-columns: 1fr; }
+
+/* ---------- Wave 7.4: Daily Review card --------------------------------- */
+
+.review-card { margin-bottom: 18px; }
+.review-tag {
+  display: inline-block; margin-left: 8px; padding: 2px 8px;
+  border-radius: 99px; font-size: 10.5px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.05em;
+}
+.review-tag.good {
+  background: rgba(95, 211, 158, 0.12); color: var(--green-2);
+  border: 1px solid rgba(95, 211, 158, 0.28);
+}
+.review-tag.bad {
+  background: rgba(240, 112, 92, 0.10); color: #f4a193;
+  border: 1px solid rgba(240, 112, 92, 0.30);
+}
+.review-tag.even {
+  background: var(--surface-2); color: var(--text-3);
+  border: 1px solid var(--border-soft);
+}
+.review-summary {
+  font-size: 13.5px; line-height: 1.6; color: var(--text); margin-bottom: 16px;
+}
+.review-cols {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 18px;
+}
+.review-col { min-width: 0; }
+.review-h {
+  font-size: 11px; font-weight: 700; letter-spacing: 0.07em;
+  text-transform: uppercase; margin-bottom: 8px;
+}
+.review-h.good { color: var(--green); }
+.review-h.warn { color: var(--amber); }
+.review-col ul { list-style: none; padding: 0; margin: 0; }
+.review-col li {
+  padding: 8px 0 8px 22px; position: relative;
+  font-size: 13px; line-height: 1.55; color: var(--text);
+  border-top: 1px solid var(--border-soft);
+}
+.review-col li:first-child { border-top: none; padding-top: 4px; }
+.review-col li::before {
+  content: ""; position: absolute; left: 4px; top: 14px;
+  width: 8px; height: 8px; border-radius: 99px;
+}
+.review-col:nth-of-type(1) li::before { background: var(--green); }
+.review-col:nth-of-type(2) li::before { background: var(--amber); }
+
+@media (max-width: 900px) {
+  .review-cols { grid-template-columns: 1fr; }
+}
+.m-panel .review-cols { grid-template-columns: 1fr; }
