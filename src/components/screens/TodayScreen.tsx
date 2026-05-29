@@ -1,16 +1,19 @@
 // Today dashboard body (server component). Rendered inside the desktop
-// AppShell and inside the mobile carousel. Visual hierarchy: biological age,
-// yesterday's AI review, calorie balance (today + week), macros, sleep,
-// activity.
+// AppShell and inside the mobile carousel. Accepts an optional viewDate prop;
+// when set, all data is scoped to that past calendar date.
 
 import CalorieBalanceChart from "@/components/CalorieBalanceChart";
 import DailyReviewCard from "@/components/DailyReviewCard";
+import DatePicker from "@/app/today/DatePicker";
+import PastBiometricEditor from "@/app/today/PastBiometricEditor";
+import PastDayMeals from "@/app/today/PastDayMeals";
 import { getProfile } from "@/lib/profile-store";
 import { deriveTargets } from "@/lib/calc";
-import { getTodayNutrition } from "@/lib/nutrition-store";
+import { getNutritionForDate, todayLocal } from "@/lib/nutrition-store";
 import { getActivitySummary } from "@/lib/activity-store";
 import { getBioAgeReport } from "@/lib/bioage-store";
-import { getYesterdayReview } from "@/lib/review-store";
+import { getReviewForDate, getYesterdayReview } from "@/lib/review-store";
+import { getBiometricsOnOrBefore } from "@/lib/biometric-store";
 import { supabaseConfigured } from "@/lib/supabase";
 import type { BioAgeReport } from "@/lib/bioage-store";
 import type { LifetimeAverages } from "@/lib/activity-types";
@@ -23,30 +26,59 @@ function hm(min: number): string {
   return `${h}h ${String(m).padStart(2, "0")}m`;
 }
 
-export default async function TodayScreen({ userId }: { userId: string }) {
-  const profile = await getProfile(userId);
-  const targets = deriveTargets(profile);
-  const nutrition = await getTodayNutrition(userId);
-  const activity = await getActivitySummary(userId, profile, 7);
-  const bio = await getBioAgeReport(userId, profile);
-  // Generates yesterday's review on first load of the day, else returns cached.
-  const review = await getYesterdayReview(userId, profile);
-
-  const today = new Date().toLocaleDateString("en-US", {
+function prettyDate(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString("en-US", {
     weekday: "long",
     day: "numeric",
     month: "long",
   });
+}
 
-  // Today's burn: last entry of the balance array (oldest first → newest last).
-  const todayBalance = activity.balance[activity.balance.length - 1];
-  const todayBurn = todayBalance?.burnKcal ?? null;
+export default async function TodayScreen({
+  userId,
+  viewDate,
+}: {
+  userId: string;
+  viewDate?: string;
+}) {
+  const today = todayLocal();
+  const isPast = !!viewDate && viewDate !== today;
+  const date = viewDate ?? today;
+
+  const profile = await getProfile(userId);
+  const targets = deriveTargets(profile);
+  const nutrition = await getNutritionForDate(userId, date);
+  const activity = await getActivitySummary(
+    userId,
+    profile,
+    7,
+    isPast ? date : undefined,
+  );
+  const bio = await getBioAgeReport(userId, profile, isPast ? date : undefined);
+  const review = isPast
+    ? await getReviewForDate(userId, profile, date)
+    : await getYesterdayReview(userId, profile);
+
+  const pastBiometricsInitial = isPast
+    ? await getBiometricsOnOrBefore(userId, date)
+    : null;
+
+  // Today's (or selected day's) burn = last entry of the balance array.
+  const dayBalance = activity.balance[activity.balance.length - 1];
+  const dayBurn = dayBalance?.burnKcal ?? null;
 
   return (
     <>
-      <div className="topbar">
-        <h1>Today</h1>
-        <p>{today} — your whole picture at a glance.</p>
+      <div className="topbar topbar-with-picker">
+        <div>
+          <h1>{isPast ? "Past Day" : "Today"}</h1>
+          <p>
+            {prettyDate(date)}
+            {isPast ? " — viewing your history" : " — your whole picture at a glance."}
+          </p>
+        </div>
+        <DatePicker date={date} />
       </div>
 
       {!supabaseConfigured && (
@@ -56,24 +88,34 @@ export default async function TodayScreen({ userId }: { userId: string }) {
         </div>
       )}
 
-      <BioAgeHero bio={bio} />
+      {isPast && (
+        <div className="banner ok">
+          You&apos;re viewing {prettyDate(date)}. Edit any logged meal or set
+          your body metrics for this day below.
+        </div>
+      )}
+
+      <BioAgeHero bio={bio} isPast={isPast} />
 
       {review && <DailyReviewCard review={review} />}
 
       <div className="act-2col">
         <CalorieBalanceCard
           intake={nutrition.totals.calories}
-          burn={todayBurn}
+          burn={dayBurn}
           target={targets.targetKcal}
           tdee={targets.tdee}
           goal={profile.energyGoal}
+          isPast={isPast}
         />
         <MacroCard totals={nutrition.totals} targets={targets} />
       </div>
 
       <div className="card chart-card" style={{ marginTop: 18 }}>
         <div className="card-h">
-          <div className="t">Last 7 days — Intake vs Burn</div>
+          <div className="t">
+            {isPast ? "7 days ending here" : "Last 7 days"} — Intake vs Burn
+          </div>
           <div className="x">
             Each day&apos;s net energy labelled above the bars (deficit green,
             surplus amber)
@@ -92,13 +134,25 @@ export default async function TodayScreen({ userId }: { userId: string }) {
         />
         <ActivityCard today={activity.today} averages={activity.averages} />
       </div>
+
+      {isPast && (
+        <>
+          <PastDayMeals initial={nutrition} />
+          {pastBiometricsInitial && (
+            <PastBiometricEditor
+              date={date}
+              initial={pastBiometricsInitial}
+            />
+          )}
+        </>
+      )}
     </>
   );
 }
 
 // --------------------------------------------------------------------------
 
-function BioAgeHero({ bio }: { bio: BioAgeReport }) {
+function BioAgeHero({ bio, isPast }: { bio: BioAgeReport; isPast: boolean }) {
   const { result, trend, dayDelta } = bio;
   const delta = result.delta;
   const younger = delta < -0.1;
@@ -107,18 +161,19 @@ function BioAgeHero({ bio }: { bio: BioAgeReport }) {
 
   let dayLine: { text: string; cls: string } | null = null;
   if (dayDelta != null) {
+    const prevWord = isPast ? "the prior day" : "yesterday";
     if (dayDelta < -0.05) {
       dayLine = {
-        text: `Down ${Math.abs(dayDelta).toFixed(2)} years since yesterday — your habits are working.`,
+        text: `Down ${Math.abs(dayDelta).toFixed(2)} years since ${prevWord} — habits were working.`,
         cls: "good",
       };
     } else if (dayDelta > 0.05) {
       dayLine = {
-        text: `Up ${dayDelta.toFixed(2)} years since yesterday — worth a look at sleep, HRV and resting heart rate.`,
+        text: `Up ${dayDelta.toFixed(2)} years since ${prevWord} — sleep, HRV and resting HR worth a look.`,
         cls: "bad",
       };
     } else {
-      dayLine = { text: "No meaningful change since yesterday.", cls: "even" };
+      dayLine = { text: `No meaningful change since ${prevWord}.`, cls: "even" };
     }
   }
 
@@ -127,17 +182,17 @@ function BioAgeHero({ bio }: { bio: BioAgeReport }) {
       <div className="card-h">
         <div className="t">Biological Age</div>
         <div className="x">
-          An estimate from your fitness, heart and sleep markers — not a
-          diagnosis.
+          {isPast
+            ? "Snapshot for this date, from your stored markers."
+            : "An estimate from your fitness, heart and sleep markers — not a diagnosis."}
         </div>
       </div>
 
       {result.inputsUsed === 0 ? (
         <p className="muted" style={{ fontSize: 13, lineHeight: 1.6 }}>
-          Your biological-age estimate needs at least a couple of markers. Add
-          your <b>VO2max</b> or <b>body-fat %</b> on the Profile screen, and let
-          the Activity sync gather a few days of resting heart rate, HRV and
-          sleep. It will appear here automatically.
+          {isPast
+            ? "No bio-age snapshot was recorded for this date."
+            : "Your biological-age estimate needs at least a couple of markers. Add your VO2max or body-fat % on the Profile screen, and let the Activity sync gather a few days of resting heart rate, HRV and sleep."}
         </p>
       ) : (
         <div className="bioage-grid">
@@ -183,27 +238,12 @@ function BioAgeHero({ bio }: { bio: BioAgeReport }) {
                       className="contrib-fill"
                       style={
                         isYounger
-                          ? {
-                              right: "50%",
-                              width: `${mag}%`,
-                              background: "var(--green)",
-                            }
-                          : {
-                              left: "50%",
-                              width: `${mag}%`,
-                              background: isOlder
-                                ? "var(--red)"
-                                : "var(--surface-3)",
-                            }
+                          ? { right: "50%", width: `${mag}%`, background: "var(--green)" }
+                          : { left: "50%", width: `${mag}%`, background: isOlder ? "var(--red)" : "var(--surface-3)" }
                       }
                     />
                   </div>
-                  <div
-                    className={
-                      "contrib-val " +
-                      (isYounger ? "good" : isOlder ? "bad" : "")
-                    }
-                  >
+                  <div className={"contrib-val " + (isYounger ? "good" : isOlder ? "bad" : "")}>
                     {c.years > 0 ? "+" : ""}
                     {c.years.toFixed(1)}
                   </div>
@@ -241,15 +281,11 @@ function BioTrend({ trend }: { trend: BioAgeReport["trend"] }) {
     hi = mid + 2;
   }
   const xOf = (i: number) => padX + (i / (n - 1)) * (W - 2 * padX);
-  const yOf = (v: number) =>
-    padT + (1 - (v - lo) / (hi - lo)) * (H - padT - padB);
+  const yOf = (v: number) => padT + (1 - (v - lo) / (hi - lo)) * (H - padT - padB);
 
   const line = (sel: (p: BioAgeReport["trend"][number]) => number) =>
     trend
-      .map(
-        (p, i) =>
-          `${i === 0 ? "M" : "L"}${xOf(i).toFixed(1)},${yOf(sel(p)).toFixed(1)}`,
-      )
+      .map((p, i) => `${i === 0 ? "M" : "L"}${xOf(i).toFixed(1)},${yOf(sel(p)).toFixed(1)}`)
       .join(" ");
 
   const last = trend[n - 1];
@@ -267,47 +303,19 @@ function BioTrend({ trend }: { trend: BioAgeReport["trend"] }) {
         Biological age over time
       </div>
       <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid meet">
-        <path
-          d={line((p) => p.chronological)}
-          fill="none"
-          stroke="var(--text-3)"
-          strokeWidth="1.5"
-          strokeDasharray="4 4"
-        />
-        <path
-          d={line((p) => p.bioAge)}
-          fill="none"
-          stroke="var(--green)"
-          strokeWidth="2.5"
-          strokeLinejoin="round"
-          strokeLinecap="round"
-        />
-        <circle
-          cx={xOf(n - 1)}
-          cy={yOf(last.bioAge)}
-          r="3.5"
-          fill="var(--green)"
-        />
+        <path d={line((p) => p.chronological)} fill="none" stroke="var(--text-3)" strokeWidth="1.5" strokeDasharray="4 4" />
+        <path d={line((p) => p.bioAge)} fill="none" stroke="var(--green)" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
+        <circle cx={xOf(n - 1)} cy={yOf(last.bioAge)} r="3.5" fill="var(--green)" />
         <text x={padX} y={H - 6} fill="var(--text-3)" fontSize="10">
           {labelDate(trend[0].date)}
         </text>
-        <text
-          x={W - padX}
-          y={H - 6}
-          fill="var(--text-3)"
-          fontSize="10"
-          textAnchor="end"
-        >
+        <text x={W - padX} y={H - 6} fill="var(--text-3)" fontSize="10" textAnchor="end">
           {labelDate(last.date)}
         </text>
       </svg>
       <div className="trend-legend">
-        <span>
-          <i style={{ background: "var(--green)" }} /> Biological age
-        </span>
-        <span>
-          <i className="dashed" /> Actual age
-        </span>
+        <span><i style={{ background: "var(--green)" }} /> Biological age</span>
+        <span><i className="dashed" /> Actual age</span>
       </div>
     </div>
   );
@@ -319,28 +327,29 @@ function CalorieBalanceCard({
   target,
   tdee,
   goal,
+  isPast,
 }: {
   intake: number;
   burn: number | null;
   target: number;
   tdee: number;
   goal: string;
+  isPast: boolean;
 }) {
   const intakePct = target > 0 ? Math.min(100, (intake / target) * 100) : 0;
-  const burnPct =
-    tdee > 0 && burn != null ? Math.min(100, (burn / tdee) * 100) : null;
+  const burnPct = tdee > 0 && burn != null ? Math.min(100, (burn / tdee) * 100) : null;
   const net = burn != null ? intake - burn : null;
 
   let netLabel: string;
   let netTone: "good" | "warn" | "even";
   if (net == null) {
-    netLabel = "Waiting for sync";
+    netLabel = isPast ? "No burn data for this day" : "Waiting for sync";
     netTone = "even";
   } else if (Math.abs(net) < 50) {
     netLabel = `Maintenance — within ${fmt(Math.abs(net))} kcal of balance`;
     netTone = "even";
   } else if (net < 0) {
-    netLabel = `Deficit ${fmt(Math.abs(net))} kcal — your habits are on track`;
+    netLabel = `Deficit ${fmt(Math.abs(net))} kcal${isPast ? "" : " — your habits are on track"}`;
     netTone = "good";
   } else {
     netLabel = `Surplus +${fmt(net)} kcal`;
@@ -353,7 +362,7 @@ function CalorieBalanceCard({
   return (
     <div className="card">
       <div className="card-h">
-        <div className="t">Calorie Balance Today</div>
+        <div className="t">{isPast ? "Calorie Balance" : "Calorie Balance Today"}</div>
         <div className="x">
           Eaten vs burned — your {goal} target is {fmt(target)} kcal
         </div>
@@ -392,10 +401,7 @@ function CalorieBalanceCard({
         </div>
         <div className="bigtrack">
           {burnPct != null && (
-            <div
-              className="bigtrack-fill"
-              style={{ width: `${burnPct}%`, background: "var(--blue)" }}
-            />
+            <div className="bigtrack-fill" style={{ width: `${burnPct}%`, background: "var(--blue)" }} />
           )}
         </div>
       </div>
@@ -412,16 +418,8 @@ function CalorieBalanceCard({
               className="net-fill"
               style={
                 net <= 0
-                  ? {
-                      right: "50%",
-                      width: `${netPct}%`,
-                      background: "var(--green)",
-                    }
-                  : {
-                      left: "50%",
-                      width: `${netPct}%`,
-                      background: "var(--amber)",
-                    }
+                  ? { right: "50%", width: `${netPct}%`, background: "var(--green)" }
+                  : { left: "50%", width: `${netPct}%`, background: "var(--amber)" }
               }
             />
           )}
@@ -444,25 +442,15 @@ function MacroCard({
   targets: { proteinG: number; carbsG: number; fatG: number };
 }) {
   const rows = [
-    {
-      label: "Protein",
-      v: totals.protein_g,
-      goal: targets.proteinG,
-      color: "var(--blue)",
-    },
-    {
-      label: "Carbs",
-      v: totals.carbs_g,
-      goal: targets.carbsG,
-      color: "var(--amber)",
-    },
+    { label: "Protein", v: totals.protein_g, goal: targets.proteinG, color: "var(--blue)" },
+    { label: "Carbs", v: totals.carbs_g, goal: targets.carbsG, color: "var(--amber)" },
     { label: "Fat", v: totals.fat_g, goal: targets.fatG, color: "var(--violet)" },
   ];
   return (
     <div className="card">
       <div className="card-h">
         <div className="t">Macros</div>
-        <div className="x">Today against your targets</div>
+        <div className="x">Logged for this day vs your targets</div>
       </div>
       {rows.map((m) => {
         const pct = m.goal > 0 ? Math.min(100, (m.v / m.goal) * 100) : 0;
@@ -475,10 +463,7 @@ function MacroCard({
               </span>
             </div>
             <div className="track">
-              <div
-                className="track-fill"
-                style={{ width: `${pct}%`, background: m.color }}
-              />
+              <div className="track-fill" style={{ width: `${pct}%`, background: m.color }} />
             </div>
           </div>
         );
@@ -510,14 +495,14 @@ function SleepCard({
   return (
     <div className="card">
       <div className="card-h">
-        <div className="t">Last Night&apos;s Sleep</div>
+        <div className="t">Sleep</div>
         {avgSleepMin != null && (
           <div className="x">Lifetime average {hm(avgSleepMin)} per night</div>
         )}
       </div>
       {!night || night.totalMin == null ? (
         <p className="muted" style={{ fontSize: 12.5 }}>
-          No sleep synced yet — the Activity bridge fills this in each night.
+          No sleep synced for this date.
         </p>
       ) : (
         <SleepBody night={night} />
@@ -570,10 +555,7 @@ function SleepBody({
               <div
                 key={s.key}
                 className="stage-seg"
-                style={{
-                  width: `${(s.min / sum) * 100}%`,
-                  background: s.color,
-                }}
+                style={{ width: `${(s.min / sum) * 100}%`, background: s.color }}
               />
             ),
         )}
@@ -605,18 +587,8 @@ function ActivityCard({
 }) {
   const stats = [
     { label: "Steps", value: today.steps, avg: averages.steps, unit: "" },
-    {
-      label: "Active kcal",
-      value: today.active_kcal,
-      avg: averages.active_kcal,
-      unit: "",
-    },
-    {
-      label: "Resting HR",
-      value: today.rhr,
-      avg: averages.rhr,
-      unit: "bpm",
-    },
+    { label: "Active kcal", value: today.active_kcal, avg: averages.active_kcal, unit: "" },
+    { label: "Resting HR", value: today.rhr, avg: averages.rhr, unit: "bpm" },
     { label: "HRV", value: today.hrv, avg: averages.hrv, unit: "ms" },
   ];
   return (

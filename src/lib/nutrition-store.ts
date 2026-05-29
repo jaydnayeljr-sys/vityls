@@ -70,7 +70,7 @@ function rowToItem(row: Record<string, unknown>): LoggedItem {
   };
 }
 
-/** Persists an extracted meal for a user. */
+/** Persists an extracted meal for a user (always for today). */
 export async function logMeal(
   userId: string,
   meal: ExtractedMeal,
@@ -108,11 +108,11 @@ export async function logMeal(
   }
 }
 
-/** Returns everything a user logged today plus the rolled-up totals. */
-export async function getTodayNutrition(
+/** Returns the nutrition logged for a user on a specific calendar date. */
+export async function getNutritionForDate(
   userId: string,
+  date: string,
 ): Promise<DailyNutrition> {
-  const date = todayLocal();
   if (!supabaseConfigured) {
     return { date, totals: emptyTotals(), meals: [] };
   }
@@ -151,6 +151,13 @@ export async function getTodayNutrition(
   totals.fiber_g = Math.round(totals.fiber_g * 10) / 10;
 
   return { date, totals, meals };
+}
+
+/** Returns everything a user logged today plus the rolled-up totals. */
+export async function getTodayNutrition(
+  userId: string,
+): Promise<DailyNutrition> {
+  return getNutritionForDate(userId, todayLocal());
 }
 
 const NUM_FIELDS = [

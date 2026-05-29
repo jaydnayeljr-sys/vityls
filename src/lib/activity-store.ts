@@ -43,13 +43,23 @@ function dateStr(d: Date): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
+function parseDate(s: string): Date {
+  const [y, m, d] = s.split("-").map(Number);
+  return new Date(y, m - 1, d);
+}
+
 /** The last n local calendar dates, oldest first, including today. */
 export function lastNDates(n: number): string[] {
+  return nDatesEnding(n, dateStr(new Date()));
+}
+
+/** The n calendar dates ending on `endDate` (inclusive), oldest first. */
+export function nDatesEnding(n: number, endDate: string): string[] {
   const out: string[] = [];
-  const now = new Date();
+  const end = parseDate(endDate);
   for (let i = n - 1; i >= 0; i--) {
-    const d = new Date(now);
-    d.setDate(now.getDate() - i);
+    const d = new Date(end);
+    d.setDate(end.getDate() - i);
     out.push(dateStr(d));
   }
   return out;
@@ -201,15 +211,19 @@ async function caloriesByDate(
   return out;
 }
 
-/** Assembles the Activity-screen data for a user over the last `days` days. */
+/** Assembles the Activity-screen data for a user for the `days` days ending
+ *  on `endDate`. Defaults to the last 7 days through today. */
 export async function getActivitySummary(
   userId: string,
   profile: Profile,
   days = 7,
+  endDate?: string,
 ): Promise<ActivitySummary> {
-  const dates = lastNDates(days);
+  const dates = endDate
+    ? nDatesEnding(days, endDate)
+    : lastNDates(days);
   const start = dates[0];
-  const today = dates[dates.length - 1];
+  const last = dates[dates.length - 1];
 
   const byDate = new Map<string, DayMetrics>();
   for (const d of dates) byDate.set(d, emptyDay(d));
@@ -223,7 +237,7 @@ export async function getActivitySummary(
       .select("metric_date, metric, value")
       .eq("user_id", userId)
       .gte("metric_date", start)
-      .lte("metric_date", today);
+      .lte("metric_date", last);
     for (const row of (metricRows ?? []) as Record<string, unknown>[]) {
       const day = byDate.get(String(row.metric_date));
       const metric = String(row.metric) as MetricKey;
@@ -237,7 +251,7 @@ export async function getActivitySummary(
       .from("sleep_session")
       .select("*")
       .eq("user_id", userId)
-      .lte("night_date", today)
+      .lte("night_date", last)
       .order("night_date", { ascending: false })
       .limit(1);
     const s = (sleepRows ?? [])[0] as Record<string, unknown> | undefined;
@@ -255,14 +269,12 @@ export async function getActivitySummary(
     }
   }
 
-  const intake = await caloriesByDate(userId, start, today);
+  const intake = await caloriesByDate(userId, start, last);
   const dayList = dates.map((d) => byDate.get(d) as DayMetrics);
   const { bmr } = resolveBmr(profile);
 
   // Derive active calories when Health Connect only reported a daily total.
   // Active energy = total energy out − resting energy (BMR), floored at zero.
-  // This keeps the Activity and Today screens populated for devices that log
-  // total calories but not a distinct ActiveCaloriesBurned record.
   for (const d of dayList) {
     if (d.active_kcal == null && d.total_kcal != null) {
       d.active_kcal = Math.max(0, Math.round(d.total_kcal - bmr));
@@ -287,7 +299,7 @@ export async function getActivitySummary(
 
   return {
     days: dayList,
-    today: byDate.get(today) as DayMetrics,
+    today: byDate.get(last) as DayMetrics,
     lastNight,
     balance,
     averages,
