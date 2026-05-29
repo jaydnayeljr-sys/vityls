@@ -1002,3 +1002,120 @@ a { color: inherit; text-decoration: none; }
 }
 .m-panel .topbar-with-picker { flex-direction: column; align-items: stretch; }
 .m-panel .pb-row { grid-template-columns: 1fr; gap: 8px; }
+
+/* ---------- Wave 8: Bio-age history + calendar popover ----------------- */
+
+/* Bio Age History card */
+.bah-h {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  gap: 12px; flex-wrap: wrap;
+}
+.bah-toggle {
+  display: inline-flex; gap: 2px; background: var(--surface-2);
+  padding: 3px; border-radius: 9px; border: 1px solid var(--border);
+}
+.bah-toggle button {
+  padding: 6px 12px; border-radius: 6px; background: transparent; border: none;
+  color: var(--text-3); font-size: 11.5px; font-weight: 600; cursor: pointer;
+  font-family: inherit;
+}
+.bah-toggle button.on { background: var(--surface-3); color: var(--text); }
+.bah-chart { width: 100%; height: auto; display: block; margin-top: 6px; }
+.bah-legend {
+  display: flex; flex-wrap: wrap; gap: 16px; margin-top: 12px;
+  padding-top: 12px; border-top: 1px solid var(--border-soft);
+  font-size: 11.5px; color: var(--text-2);
+}
+.bah-key { display: flex; align-items: center; gap: 7px; }
+.bah-line {
+  display: inline-block; width: 18px; height: 3px; border-radius: 2px;
+}
+.bah-line.bah-dashed {
+  background: repeating-linear-gradient(
+    90deg, var(--text-3) 0 4px, transparent 4px 8px);
+}
+
+/* Calendar picker — button + popover */
+.cal-wrap { position: relative; display: flex; align-items: center; gap: 10px; }
+.cal-btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 9px 12px; border-radius: 10px;
+  background: var(--surface); border: 1px solid var(--border);
+  color: var(--text); font-family: inherit; font-size: 13px;
+  font-weight: 600; cursor: pointer; transition: 0.14s;
+}
+.cal-btn:hover { border-color: var(--text-3); }
+.cal-btn svg { width: 16px; height: 16px; color: var(--text-2); }
+.cal-btn .cal-chev { width: 12px; height: 12px; opacity: 0.7; }
+
+.cal-pop {
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: 50;
+  width: 308px; padding: 14px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 14px; box-shadow: var(--shadow);
+}
+.cal-pop-h {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 10px;
+}
+.cal-pop-title { font-size: 13px; font-weight: 700; color: var(--text); }
+.cal-nav {
+  width: 28px; height: 28px; border-radius: 8px; border: 1px solid var(--border);
+  background: var(--surface-2); color: var(--text-2); cursor: pointer;
+  font-size: 16px; line-height: 1; font-family: inherit;
+}
+.cal-nav:hover { color: var(--text); border-color: var(--text-3); }
+
+.cal-grid {
+  display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px;
+}
+.cal-grid-h { margin-bottom: 4px; }
+.cal-day-h {
+  font-size: 10px; font-weight: 700; color: var(--text-3);
+  text-align: center; padding: 4px 0;
+}
+.cal-cell {
+  aspect-ratio: 1; min-height: 36px;
+  display: flex; align-items: center; justify-content: center;
+  background: transparent; border: 1px solid transparent;
+  border-radius: 8px; padding: 0; cursor: pointer;
+  color: var(--text-3); font-family: inherit; font-size: 13px; font-weight: 600;
+}
+.cal-cell:not(.empty):not(.future):hover {
+  background: var(--surface-2); border-color: var(--border);
+}
+.cal-cell.empty { cursor: default; }
+.cal-cell.future { opacity: 0.3; cursor: default; }
+.cal-cell.selected {
+  background: var(--surface-3) !important;
+  border-color: rgba(95, 211, 158, 0.45) !important;
+  color: var(--text) !important;
+}
+
+.cal-pop-foot {
+  display: flex; justify-content: space-between; align-items: center;
+  gap: 8px; margin-top: 12px; padding-top: 10px;
+  border-top: 1px solid var(--border-soft);
+}
+.cal-today-link {
+  background: transparent; border: none; cursor: pointer;
+  color: var(--green); font-size: 12px; font-weight: 700;
+  font-family: inherit; padding: 4px 6px;
+}
+.cal-today-link:hover { text-decoration: underline; }
+.cal-legend {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 10.5px; color: var(--text-3);
+}
+.cal-dot {
+  display: inline-block; width: 8px; height: 8px;
+  border-radius: 99px; margin-right: 2px; margin-left: 4px;
+}
+.cal-dot.conf-high { background: var(--green); }
+.cal-dot.conf-medium { background: var(--amber); }
+.cal-dot.conf-low { background: var(--text-3); }
+
+@media (max-width: 500px) {
+  .cal-pop { right: auto; left: 0; width: 290px; }
+}
+.m-panel .cal-pop { right: auto; left: 0; width: 280px; max-width: 92vw; }

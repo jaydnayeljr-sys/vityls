@@ -1,9 +1,8 @@
 // Profile screen body (server component). Rendered inside the desktop
-// AppShell and the mobile carousel. The sync card now exposes a Manual Sync
-// button instead of a raw token — the Vityl app handles signing in.
+// AppShell and the mobile carousel. Sync is now triggered by pull-to-refresh
+// on the Vityl Android app — no manual button needed.
 
 import ProfileForm from "@/app/profile/ProfileForm";
-import SyncButton from "@/app/profile/SyncButton";
 import BiometricTrends from "@/components/BiometricTrends";
 import { getProfile } from "@/lib/profile-store";
 import { getBiometricHistory } from "@/lib/biometric-store";
@@ -40,17 +39,6 @@ export default async function ProfileScreen({ userId }: { userId: string }) {
           vo2max: profile.vo2max,
         }}
       />
-
-      <div className="card" style={{ marginTop: 20 }}>
-        <div className="card-h">
-          <div className="t">Activity Sync</div>
-          <div className="x">
-            Health Connect data flows in every 3 hours and each time you open
-            the Vityl app
-          </div>
-        </div>
-        <SyncButton />
-      </div>
     </>
   );
 }
