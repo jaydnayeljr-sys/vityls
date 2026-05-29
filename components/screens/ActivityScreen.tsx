@@ -38,9 +38,9 @@ export default async function ActivityScreen({ userId }: { userId: string }) {
   }[] = [
     { label: "Steps", value: t.steps, avg: avg.steps, unit: "" },
     {
-      label: "Calories burned",
-      value: t.total_kcal,
-      avg: avg.total_kcal,
+      label: "Active Calories",
+      value: t.active_kcal,
+      avg: avg.active_kcal,
       unit: "kcal",
     },
     { label: "Resting HR", value: t.rhr, avg: avg.rhr, unit: "bpm" },
@@ -74,6 +74,7 @@ export default async function ActivityScreen({ userId }: { userId: string }) {
         </div>
       )}
 
+      {/* ---------- Today's metrics ---------- */}
       <div className="stat-grid">
         {stats.map((s) => (
           <div className="card stat-card" key={s.label}>
@@ -102,6 +103,7 @@ export default async function ActivityScreen({ userId }: { userId: string }) {
         ))}
       </div>
 
+      {/* ---------- Calorie balance ---------- */}
       <div className="card chart-card">
         <div className="card-h">
           <div className="t">Calorie Balance — Intake vs Burn</div>
@@ -116,6 +118,7 @@ export default async function ActivityScreen({ userId }: { userId: string }) {
         />
       </div>
 
+      {/* ---------- Sleep + Steps ---------- */}
       <div className="act-2col">
         <div className="card">
           <div className="card-h">
