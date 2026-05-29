@@ -4,7 +4,8 @@
 
 import CalorieBalanceChart from "@/components/CalorieBalanceChart";
 import DailyReviewCard from "@/components/DailyReviewCard";
-import DatePicker from "@/app/today/DatePicker";
+import BioAgeHistory from "@/components/BioAgeHistory";
+import CalendarPicker from "@/app/today/CalendarPicker";
 import PastBiometricEditor from "@/app/today/PastBiometricEditor";
 import PastDayMeals from "@/app/today/PastDayMeals";
 import { getProfile } from "@/lib/profile-store";
@@ -16,6 +17,7 @@ import { getReviewForDate, getYesterdayReview } from "@/lib/review-store";
 import { getBiometricsOnOrBefore } from "@/lib/biometric-store";
 import { supabaseConfigured } from "@/lib/supabase";
 import type { BioAgeReport } from "@/lib/bioage-store";
+import type { Confidence } from "@/lib/bioage-confidence";
 import type { LifetimeAverages } from "@/lib/activity-types";
 
 const fmt = (n: number) => Math.round(n).toLocaleString();
@@ -64,9 +66,12 @@ export default async function TodayScreen({
     ? await getBiometricsOnOrBefore(userId, date)
     : null;
 
-  // Today's (or selected day's) burn = last entry of the balance array.
   const dayBalance = activity.balance[activity.balance.length - 1];
   const dayBurn = dayBalance?.burnKcal ?? null;
+
+  // Map of YYYY-MM-DD → confidence, for the calendar's day-number colours.
+  const confidenceByDate: Record<string, Confidence> = {};
+  for (const p of bio.trend) confidenceByDate[p.date] = p.confidence;
 
   return (
     <>
@@ -78,7 +83,7 @@ export default async function TodayScreen({
             {isPast ? " — viewing your history" : " — your whole picture at a glance."}
           </p>
         </div>
-        <DatePicker date={date} />
+        <CalendarPicker date={date} confidenceByDate={confidenceByDate} />
       </div>
 
       {!supabaseConfigured && (
@@ -96,6 +101,8 @@ export default async function TodayScreen({
       )}
 
       <BioAgeHero bio={bio} isPast={isPast} />
+
+      <BioAgeHistory trend={bio.trend} />
 
       {review && <DailyReviewCard review={review} />}
 
@@ -251,9 +258,7 @@ function BioAgeHero({ bio, isPast }: { bio: BioAgeReport; isPast: boolean }) {
               );
             })}
 
-            {trend.length >= 2 ? (
-              <BioTrend trend={trend} />
-            ) : (
+            {trend.length < 2 && (
               <p className="contrib-note">
                 A trend line will appear here as daily snapshots build up.
               </p>
@@ -261,62 +266,6 @@ function BioAgeHero({ bio, isPast }: { bio: BioAgeReport; isPast: boolean }) {
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-function BioTrend({ trend }: { trend: BioAgeReport["trend"] }) {
-  const W = 360;
-  const H = 96;
-  const padX = 8;
-  const padT = 14;
-  const padB = 24;
-  const n = trend.length;
-  const values = trend.flatMap((p) => [p.bioAge, p.chronological]);
-  let lo = Math.min(...values);
-  let hi = Math.max(...values);
-  if (hi - lo < 4) {
-    const mid = (hi + lo) / 2;
-    lo = mid - 2;
-    hi = mid + 2;
-  }
-  const xOf = (i: number) => padX + (i / (n - 1)) * (W - 2 * padX);
-  const yOf = (v: number) => padT + (1 - (v - lo) / (hi - lo)) * (H - padT - padB);
-
-  const line = (sel: (p: BioAgeReport["trend"][number]) => number) =>
-    trend
-      .map((p, i) => `${i === 0 ? "M" : "L"}${xOf(i).toFixed(1)},${yOf(sel(p)).toFixed(1)}`)
-      .join(" ");
-
-  const last = trend[n - 1];
-  const labelDate = (s: string) => {
-    const [y, m, d] = s.split("-").map(Number);
-    return new Date(y, m - 1, d).toLocaleDateString("en-US", {
-      day: "numeric",
-      month: "short",
-    });
-  };
-
-  return (
-    <div className="bio-trend">
-      <div className="contrib-head" style={{ marginTop: 4 }}>
-        Biological age over time
-      </div>
-      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid meet">
-        <path d={line((p) => p.chronological)} fill="none" stroke="var(--text-3)" strokeWidth="1.5" strokeDasharray="4 4" />
-        <path d={line((p) => p.bioAge)} fill="none" stroke="var(--green)" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
-        <circle cx={xOf(n - 1)} cy={yOf(last.bioAge)} r="3.5" fill="var(--green)" />
-        <text x={padX} y={H - 6} fill="var(--text-3)" fontSize="10">
-          {labelDate(trend[0].date)}
-        </text>
-        <text x={W - padX} y={H - 6} fill="var(--text-3)" fontSize="10" textAnchor="end">
-          {labelDate(last.date)}
-        </text>
-      </svg>
-      <div className="trend-legend">
-        <span><i style={{ background: "var(--green)" }} /> Biological age</span>
-        <span><i className="dashed" /> Actual age</span>
-      </div>
     </div>
   );
 }
@@ -579,7 +528,7 @@ function ActivityCard({
 }: {
   today: {
     steps: number | null;
-    active_kcal: number | null;
+    total_kcal: number | null;
     rhr: number | null;
     hrv: number | null;
   };
@@ -587,8 +536,18 @@ function ActivityCard({
 }) {
   const stats = [
     { label: "Steps", value: today.steps, avg: averages.steps, unit: "" },
-    { label: "Active kcal", value: today.active_kcal, avg: averages.active_kcal, unit: "" },
-    { label: "Resting HR", value: today.rhr, avg: averages.rhr, unit: "bpm" },
+    {
+      label: "Calories burned",
+      value: today.total_kcal,
+      avg: averages.total_kcal,
+      unit: "",
+    },
+    {
+      label: "Resting HR",
+      value: today.rhr,
+      avg: averages.rhr,
+      unit: "bpm",
+    },
     { label: "HRV", value: today.hrv, avg: averages.hrv, unit: "ms" },
   ];
   return (

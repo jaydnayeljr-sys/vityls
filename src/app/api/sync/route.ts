@@ -2,8 +2,8 @@
 // bridge. Authenticated by a per-user device token (no session cookie), so it
 // is exempt from the password gate.
 //
-// Body: { metrics?: [...], sleep?: [...] }  — see the README.
-// Reply: { ok, metricsWritten, sleepWritten }  or  { ok: false, error }
+// Body: { metrics?: [...], sleep?: [...], biometrics?: [...] }
+// Reply: { ok, metricsWritten, sleepWritten, biometricsWritten }
 
 import { NextResponse } from "next/server";
 import {
@@ -13,11 +13,16 @@ import {
   type SleepInput,
 } from "@/lib/activity-store";
 import { METRIC_KEYS, type MetricKey } from "@/lib/activity-types";
+import {
+  logBiometricForDate,
+  type BiometricMetric,
+} from "@/lib/biometric-store";
 import { getUserIdBySyncToken } from "@/lib/users-store";
 
 export const dynamic = "force-dynamic";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const BIOMETRIC_KEYS: BiometricMetric[] = ["weight", "body_fat", "vo2max"];
 
 function numOrNull(v: unknown): number | null {
   if (v == null || v === "") return null;
@@ -26,7 +31,6 @@ function numOrNull(v: unknown): number | null {
 }
 
 export async function POST(req: Request) {
-  // Resolve the device token (Bearer header or x-sync-token) to a user.
   const auth = req.headers.get("authorization") ?? "";
   const token = auth.toLowerCase().startsWith("bearer ")
     ? auth.slice(7).trim()
@@ -91,9 +95,28 @@ export async function POST(req: Request) {
     }
   }
 
-  if (metrics.length === 0 && sleep.length === 0) {
+  const biometrics: { date: string; metric: BiometricMetric; value: number }[] = [];
+  if (Array.isArray(body.biometrics)) {
+    for (const raw of body.biometrics) {
+      if (!raw || typeof raw !== "object") continue;
+      const r = raw as Record<string, unknown>;
+      const date = String(r.date ?? "");
+      const metric = String(r.metric ?? "") as BiometricMetric;
+      const value = Number(r.value);
+      if (
+        DATE_RE.test(date) &&
+        BIOMETRIC_KEYS.includes(metric) &&
+        Number.isFinite(value) &&
+        value > 0
+      ) {
+        biometrics.push({ date, metric, value });
+      }
+    }
+  }
+
+  if (metrics.length === 0 && sleep.length === 0 && biometrics.length === 0) {
     return NextResponse.json(
-      { ok: false, error: "No valid metrics or sleep records in the payload." },
+      { ok: false, error: "No valid metrics, sleep, or biometrics in the payload." },
       { status: 400 },
     );
   }
@@ -101,7 +124,17 @@ export async function POST(req: Request) {
   try {
     const metricsWritten = await upsertMetrics(userId, metrics);
     const sleepWritten = await upsertSleep(userId, sleep);
-    return NextResponse.json({ ok: true, metricsWritten, sleepWritten });
+    let biometricsWritten = 0;
+    for (const b of biometrics) {
+      await logBiometricForDate(userId, b.metric, b.value, b.date, "health_connect");
+      biometricsWritten++;
+    }
+    return NextResponse.json({
+      ok: true,
+      metricsWritten,
+      sleepWritten,
+      biometricsWritten,
+    });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Could not save the data.";
     return NextResponse.json({ ok: false, error: msg }, { status: 500 });
