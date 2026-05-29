@@ -946,3 +946,59 @@ a { color: inherit; text-decoration: none; }
   .review-cols { grid-template-columns: 1fr; }
 }
 .m-panel .review-cols { grid-template-columns: 1fr; }
+
+/* ---------- Wave 7.5: date picker + past-day editing -------------------- */
+
+.topbar-with-picker {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  gap: 16px; flex-wrap: wrap;
+}
+
+.date-picker { display: flex; align-items: center; gap: 12px; }
+.date-picker-btn {
+  position: relative; display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 12px; border: 1px solid var(--border); border-radius: 10px;
+  background: var(--surface); color: var(--text-2); font-size: 12.5px;
+  font-weight: 600; cursor: pointer; transition: 0.14s;
+}
+.date-picker-btn:hover { color: var(--text); border-color: var(--text-3); }
+.date-picker-btn svg { width: 16px; height: 16px; }
+.date-picker-input {
+  position: absolute; inset: 0; opacity: 0; cursor: pointer;
+  background: transparent; border: none;
+}
+.back-to-today {
+  font-size: 12px; font-weight: 600; color: var(--green);
+  padding: 6px 10px; border-radius: 8px;
+  border: 1px solid rgba(95, 211, 158, 0.3);
+}
+.back-to-today:hover { background: rgba(95, 211, 158, 0.08); }
+
+/* Past-day biometric editor */
+.pb-card { margin-top: 18px; }
+.pb-rows { display: flex; flex-direction: column; gap: 12px; }
+.pb-row {
+  display: grid; grid-template-columns: 1.2fr 1.5fr auto; gap: 12px;
+  align-items: center;
+  padding: 10px 0; border-bottom: 1px solid var(--border-soft);
+}
+.pb-row:last-child { border-bottom: none; }
+.pb-label { font-size: 13px; font-weight: 600; color: var(--text); }
+.pb-input { display: flex; align-items: center; gap: 8px; }
+.pb-input input.inp {
+  max-width: 120px; padding: 8px 10px; font-size: 13px; text-align: right;
+}
+.pb-unit { font-size: 12px; color: var(--text-3); font-weight: 600; }
+.pb-btn {
+  padding: 8px 14px; border-radius: 8px; border: none; cursor: pointer;
+  background: linear-gradient(145deg, var(--green), #2e8c66); color: #06210f;
+  font-family: inherit; font-size: 12px; font-weight: 700;
+}
+.pb-btn:disabled { opacity: 0.65; cursor: default; }
+
+@media (max-width: 700px) {
+  .topbar-with-picker { flex-direction: column; align-items: stretch; }
+  .pb-row { grid-template-columns: 1fr; gap: 8px; }
+}
+.m-panel .topbar-with-picker { flex-direction: column; align-items: stretch; }
+.m-panel .pb-row { grid-template-columns: 1fr; gap: 8px; }

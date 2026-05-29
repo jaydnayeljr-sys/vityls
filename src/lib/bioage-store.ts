@@ -1,9 +1,11 @@
 // Server-side biological-age report: gathers a user's recent synced markers,
 // runs the engine, saves today's snapshot, and returns the dated trend.
+// In past-day mode (viewDate set) the function only reads existing snapshots
+// — no recompute, no write.
 
 import "server-only";
 import { supabase, supabaseConfigured } from "./supabase";
-import { lastNDates } from "./activity-store";
+import { lastNDates, nDatesEnding } from "./activity-store";
 import { computeBioAge, type BioAgeResult } from "./bioage";
 import type { Profile } from "./types";
 
@@ -20,8 +22,7 @@ export interface BioAgeTrendPoint {
 export interface BioAgeReport {
   result: BioAgeResult;
   trend: BioAgeTrendPoint[];
-  /** Change in bio-age since the previous snapshot. Negative = improvement.
-   *  Null when there is no prior snapshot to compare against. */
+  /** Change in bio-age since the previous snapshot. Negative = improvement. */
   dayDelta: number | null;
 }
 
@@ -29,12 +30,16 @@ function average(values: number[]): number {
   return values.reduce((s, v) => s + v, 0) / values.length;
 }
 
-/** Builds a user's bio-age report and stores today's snapshot. */
+/** Builds a user's bio-age report. When viewDate is set, reads the cached
+ *  snapshot for that date instead of recomputing or saving today's. */
 export async function getBioAgeReport(
   userId: string,
   profile: Profile,
+  viewDate?: string,
 ): Promise<BioAgeReport> {
-  const dates = lastNDates(WINDOW_DAYS);
+  const dates = viewDate
+    ? nDatesEnding(WINDOW_DAYS, viewDate)
+    : lastNDates(WINDOW_DAYS);
   const start = dates[0];
   const today = dates[dates.length - 1];
 
@@ -86,23 +91,28 @@ export async function getBioAgeReport(
   });
 
   if (supabaseConfigured) {
-    await supabase.from("bio_age_snapshot").upsert(
-      {
-        user_id: userId,
-        snapshot_date: today,
-        bio_age: result.bioAge,
-        chronological: result.chronological,
-        contributions: result.contributions,
-      },
-      { onConflict: "user_id,snapshot_date" },
-    );
+    // Only write a fresh snapshot when viewing today.
+    if (!viewDate) {
+      await supabase.from("bio_age_snapshot").upsert(
+        {
+          user_id: userId,
+          snapshot_date: today,
+          bio_age: result.bioAge,
+          chronological: result.chronological,
+          contributions: result.contributions,
+        },
+        { onConflict: "user_id,snapshot_date" },
+      );
+    }
 
-    const { data: snapRows } = await supabase
+    const snapQuery = supabase
       .from("bio_age_snapshot")
       .select("snapshot_date, bio_age, chronological")
       .eq("user_id", userId)
       .order("snapshot_date", { ascending: true })
       .limit(60);
+    if (viewDate) snapQuery.lte("snapshot_date", today);
+    const { data: snapRows } = await snapQuery;
     for (const row of (snapRows ?? []) as Record<string, unknown>[]) {
       trend.push({
         date: String(row.snapshot_date),
@@ -112,12 +122,36 @@ export async function getBioAgeReport(
     }
   }
 
-  let dayDelta: number | null = null;
-  if (trend.length >= 2) {
-    const last = trend[trend.length - 1];
-    const prev = trend[trend.length - 2];
-    dayDelta = Number((last.bioAge - prev.bioAge).toFixed(2));
+  // In past-day mode, prefer the cached snapshot for the viewed date over the
+  // freshly computed result (which used today's profile + window data).
+  let pastResult: BioAgeResult | null = null;
+  if (viewDate) {
+    const snap = trend.find((p) => p.date === viewDate);
+    if (snap) {
+      pastResult = {
+        ...result,
+        bioAge: snap.bioAge,
+        chronological: snap.chronological,
+        delta: Number((snap.bioAge - snap.chronological).toFixed(2)),
+      };
+    }
   }
 
-  return { result, trend, dayDelta };
+  let dayDelta: number | null = null;
+  if (trend.length >= 2) {
+    const idx = viewDate
+      ? trend.findIndex((p) => p.date === viewDate)
+      : trend.length - 1;
+    if (idx > 0) {
+      const last = trend[idx];
+      const prev = trend[idx - 1];
+      dayDelta = Number((last.bioAge - prev.bioAge).toFixed(2));
+    }
+  }
+
+  return {
+    result: pastResult ?? result,
+    trend,
+    dayDelta,
+  };
 }

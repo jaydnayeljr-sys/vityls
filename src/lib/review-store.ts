@@ -1,14 +1,14 @@
-// End-of-day AI review. Generated once per user per day, on the first Today-
-// screen load the next morning. Claude looks at yesterday's metrics,
-// nutrition and sleep against the user's lifetime averages and writes a short
-// summary plus 1-3 wins and 1-3 improvements aimed at lowering bio-age.
+// End-of-day AI review. Cached one row per user per day. On Today's screen
+// the default behavior shows yesterday's review (auto-generated on first
+// load). When viewing a past date, the review for THAT date is shown — also
+// generated on demand if it hasn't been written yet.
 
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import { supabase, supabaseConfigured } from "./supabase";
 import { anthropicConfigured } from "./anthropic";
 import { deriveTargets } from "./calc";
-import { getLifetimeAverages, lastNDates } from "./activity-store";
+import { getLifetimeAverages, lastNDates, nDatesEnding } from "./activity-store";
 import type { Profile } from "./types";
 import { METRIC_KEYS } from "./activity-types";
 
@@ -16,7 +16,7 @@ const MODEL = "claude-sonnet-4-6";
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY ?? "" });
 
 export interface DailyReview {
-  date: string;            // YYYY-MM-DD of the day being reviewed
+  date: string;
   summary: string;
   wins: string[];
   improvements: string[];
@@ -52,26 +52,22 @@ interface ReviewData {
 
 const REVIEW_TOOL = {
   name: "submit_daily_review",
-  description:
-    "Submit a short end-of-day review of the user's health markers.",
+  description: "Submit a short end-of-day review of the user's health markers.",
   input_schema: {
     type: "object" as const,
     properties: {
       summary: {
         type: "string",
-        description:
-          "Two to three sentences summarising how yesterday went overall.",
+        description: "Two to three sentences summarising how the day went.",
       },
       wins: {
         type: "array",
-        description:
-          "One to three concrete things the user did well yesterday (each one short, 12-22 words).",
+        description: "1-3 concrete things the user did well (12-22 words each).",
         items: { type: "string" },
       },
       improvements: {
         type: "array",
-        description:
-          "One to three concrete things the user could improve today to lower their biological age. Each one short, 12-22 words.",
+        description: "1-3 concrete things the user could improve to lower their biological age. 12-22 words each.",
         items: { type: "string" },
       },
     },
@@ -80,10 +76,10 @@ const REVIEW_TOOL = {
 };
 
 const SYSTEM_PROMPT = `You are Vityl Coach, an evidence-based health assistant.
-You will receive yesterday's data for one user — bio-age delta, daily metrics
+You will receive one day's data for one user — bio-age delta, daily metrics
 against their lifetime averages, sleep stages, and nutrition vs targets.
 
-Write a short end-of-day review:
+Write a short review of that day:
 - Concise summary (2-3 sentences).
 - 1-3 wins they should be proud of.
 - 1-3 specific, actionable improvements that would lower their biological age
@@ -95,14 +91,19 @@ Be specific to the numbers in the data. Use plain language and approachable
 tone — not clinical. Never tell them to consult a doctor unless data clearly
 indicates a serious problem. Always call the submit_daily_review tool.`;
 
-function yyyymmdd(d: Date): string {
-  const p = (x: number) => String(x).padStart(2, "0");
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+function pad(n: number): string {
+  return String(n).padStart(2, "0");
 }
 
 function yesterdayDate(): string {
-  const dates = lastNDates(2);
-  return dates[0]; // oldest of [yesterday, today]
+  return lastNDates(2)[0];
+}
+
+function dayBeforeDate(date: string): string {
+  const [y, m, d] = date.split("-").map(Number);
+  const dt = new Date(y, m - 1, d);
+  dt.setDate(dt.getDate() - 1);
+  return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`;
 }
 
 async function nutritionTotalsForDate(
@@ -119,9 +120,7 @@ async function nutritionTotalsForDate(
   if (!supabaseConfigured) return out;
   const { data } = await supabase
     .from("food_log")
-    .select(
-      "food_item(calories, protein_g, carbs_g, fat_g, fiber_g)",
-    )
+    .select("food_item(calories, protein_g, carbs_g, fat_g, fiber_g)")
     .eq("user_id", userId)
     .eq("logged_for", date);
   for (const row of (data ?? []) as Record<string, unknown>[]) {
@@ -150,10 +149,8 @@ async function gatherReviewData(
   date: string,
 ): Promise<ReviewData | null> {
   if (!supabaseConfigured) return null;
-  const dates = lastNDates(2);
-  const dayBefore = dates[0] === date ? yyyymmdd(new Date(Date.parse(date + "T00:00:00") - 86400000)) : dates[0];
+  const dayBefore = dayBeforeDate(date);
 
-  // Metrics for the target date.
   const { data: metricRows } = await supabase
     .from("daily_metric")
     .select("metric, value")
@@ -161,11 +158,9 @@ async function gatherReviewData(
     .eq("metric_date", date);
   const metricsForDay: Record<string, number> = {};
   for (const row of (metricRows ?? []) as Record<string, unknown>[]) {
-    const k = String(row.metric);
-    metricsForDay[k] = Number(row.value);
+    metricsForDay[String(row.metric)] = Number(row.value);
   }
 
-  // Sleep for the night.
   const { data: sleepRow } = await supabase
     .from("sleep_session")
     .select("*")
@@ -174,10 +169,8 @@ async function gatherReviewData(
     .maybeSingle();
   const sleep = sleepRow as Record<string, unknown> | null;
 
-  // Lifetime averages.
   const averages = await getLifetimeAverages(userId);
 
-  // Bio-age snapshots for the date and the one before.
   const { data: snapRows } = await supabase
     .from("bio_age_snapshot")
     .select("snapshot_date, bio_age")
@@ -196,11 +189,9 @@ async function gatherReviewData(
       ? Number((bioYesterday - bioDayBefore).toFixed(2))
       : null;
 
-  // Nutrition for the day.
   const nut = await nutritionTotalsForDate(userId, date);
   const targets = deriveTargets(profile);
 
-  // Build the metrics map keyed by METRIC_KEYS, with lifetime averages.
   const metrics: Record<
     string,
     { yesterday: number | null; lifetimeAvg: number | null }
@@ -212,7 +203,6 @@ async function gatherReviewData(
     };
   }
 
-  // Bail if there is essentially no data for the day.
   const haveMetrics = Object.values(metricsForDay).length > 0;
   const haveSleep = sleep != null;
   const haveNutrition = nut.intakeKcal > 0;
@@ -221,11 +211,7 @@ async function gatherReviewData(
   return {
     date,
     chronologicalAge: profile.age,
-    bioAge: {
-      yesterday: bioYesterday,
-      dayBefore: bioDayBefore,
-      delta: bioDelta,
-    },
+    bioAge: { yesterday: bioYesterday, dayBefore: bioDayBefore, delta: bioDelta },
     metrics,
     sleep: {
       durationMin: sleep ? Number(sleep.total_min ?? 0) || null : null,
@@ -264,7 +250,7 @@ async function callClaudeForReview(data: ReviewData): Promise<{
     messages: [
       {
         role: "user",
-        content: `Yesterday's data:\n\n${JSON.stringify(data, null, 2)}\n\nCall submit_daily_review.`,
+        content: `Data for ${data.date}:\n\n${JSON.stringify(data, null, 2)}\n\nCall submit_daily_review.`,
       },
     ],
   });
@@ -291,15 +277,14 @@ async function callClaudeForReview(data: ReviewData): Promise<{
   throw new Error("Claude did not return a structured review.");
 }
 
-/** Returns yesterday's review for a user, generating + caching it on demand. */
-export async function getYesterdayReview(
+/** Returns the review for `date` for the user, generating + caching if needed. */
+export async function getReviewForDate(
   userId: string,
   profile: Profile,
+  date: string,
 ): Promise<DailyReview | null> {
   if (!supabaseConfigured) return null;
-  const date = yesterdayDate();
 
-  // Cached?
   const { data: cached } = await supabase
     .from("daily_review")
     .select("review_date, summary, wins, improvements, bio_age_delta")
@@ -332,8 +317,6 @@ export async function getYesterdayReview(
     return null;
   }
 
-  // Cache the result. Fire-and-forget the response shape so a write failure
-  // doesn't block the render.
   await supabase.from("daily_review").upsert(
     {
       user_id: userId,
@@ -354,3 +337,14 @@ export async function getYesterdayReview(
     bioAgeDelta: data.bioAge.delta,
   };
 }
+
+/** Convenience for the default Today view — review of yesterday. */
+export async function getYesterdayReview(
+  userId: string,
+  profile: Profile,
+): Promise<DailyReview | null> {
+  return getReviewForDate(userId, profile, yesterdayDate());
+}
+
+// Silence unused import warning — kept for re-export consistency.
+export type _NDates = typeof nDatesEnding;
