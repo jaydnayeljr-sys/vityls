@@ -12,15 +12,26 @@ import { requireUser } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
-export default async function MobilePage() {
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+// Accepts ?date=YYYY-MM-DD just like /today, so the calendar picker works in
+// the mobile carousel too (the middleware forwards the query string here).
+export default async function MobilePage({
+  searchParams,
+}: {
+  searchParams?: { date?: string };
+}) {
   const user = await requireUser();
+  const rawDate =
+    typeof searchParams?.date === "string" ? searchParams.date : undefined;
+  const viewDate = rawDate && DATE_RE.test(rawDate) ? rawDate : undefined;
   return (
     <MobileShell
       screens={[
         {
           key: "today",
           label: "Today",
-          node: <TodayScreen userId={user.id} />,
+          node: <TodayScreen userId={user.id} viewDate={viewDate} />,
         },
         {
           key: "activity",

@@ -61,13 +61,21 @@ async function gatherMarkers(
   if (!supabaseConfigured) return { rhr: null, hrv: null, sleep: null };
   const start = nDatesEnding(WINDOW_DAYS, endDate)[0];
 
-  const { data: metricRows } = await supabase
-    .from("daily_metric")
-    .select("metric, value")
-    .eq("user_id", userId)
-    .gte("metric_date", start)
-    .lte("metric_date", endDate)
-    .in("metric", ["rhr", "hrv"]);
+  const [{ data: metricRows }, { data: sleepRows }] = await Promise.all([
+    supabase
+      .from("daily_metric")
+      .select("metric, value")
+      .eq("user_id", userId)
+      .gte("metric_date", start)
+      .lte("metric_date", endDate)
+      .in("metric", ["rhr", "hrv"]),
+    supabase
+      .from("sleep_session")
+      .select("total_min")
+      .eq("user_id", userId)
+      .gte("night_date", start)
+      .lte("night_date", endDate),
+  ]);
 
   const rhrVals: number[] = [];
   const hrvVals: number[] = [];
@@ -78,12 +86,6 @@ async function gatherMarkers(
     else if (row.metric === "hrv") hrvVals.push(v);
   }
 
-  const { data: sleepRows } = await supabase
-    .from("sleep_session")
-    .select("total_min")
-    .eq("user_id", userId)
-    .gte("night_date", start)
-    .lte("night_date", endDate);
   const sleepVals = ((sleepRows ?? []) as Record<string, unknown>[])
     .map((r) => Number(r.total_min))
     .filter((v) => Number.isFinite(v) && v > 0);
@@ -100,22 +102,16 @@ async function datesWithData(userId: string): Promise<Set<string>> {
   const out = new Set<string>();
   if (!supabaseConfigured) return out;
 
-  const { data: m } = await supabase
-    .from("daily_metric")
-    .select("metric_date")
-    .eq("user_id", userId);
+  const [{ data: m }, { data: s }] = await Promise.all([
+    supabase.from("daily_metric").select("metric_date").eq("user_id", userId),
+    supabase.from("sleep_session").select("night_date").eq("user_id", userId),
+  ]);
   for (const row of (m ?? []) as Record<string, unknown>[]) {
     out.add(String(row.metric_date));
   }
-
-  const { data: s } = await supabase
-    .from("sleep_session")
-    .select("night_date")
-    .eq("user_id", userId);
   for (const row of (s ?? []) as Record<string, unknown>[]) {
     out.add(String(row.night_date));
   }
-
   return out;
 }
 
@@ -128,12 +124,14 @@ export async function backfillBioAgeHistory(
   if (!supabaseConfigured) return 0;
 
   const today = todayLocal();
-  const present = await datesWithData(userId);
+  const [present, { data: snapRows }] = await Promise.all([
+    datesWithData(userId),
+    supabase
+      .from("bio_age_snapshot")
+      .select("snapshot_date, inputs_used")
+      .eq("user_id", userId),
+  ]);
 
-  const { data: snapRows } = await supabase
-    .from("bio_age_snapshot")
-    .select("snapshot_date, inputs_used")
-    .eq("user_id", userId);
   const have = new Map<string, number | null>();
   for (const row of (snapRows ?? []) as Record<string, unknown>[]) {
     have.set(
@@ -156,26 +154,82 @@ export async function backfillBioAgeHistory(
   todo.sort((a, b) => (a < b ? 1 : -1));
   const batch = todo.slice(0, BACKFILL_CAP);
 
-  let written = 0;
-  for (const date of batch) {
-    const result = await computeForDate(userId, profile, date);
-    if (result.inputsUsed === 0) continue;
+  // Fetch the markers for every window in TWO range queries (instead of two
+  // queries per backfilled date), then compute each date's rolling window
+  // in memory.
+  const newest = batch[0];
+  const oldest = batch[batch.length - 1];
+  const windowStart = nDatesEnding(WINDOW_DAYS, oldest)[0];
 
-    await supabase.from("bio_age_snapshot").upsert(
-      {
-        user_id: userId,
-        snapshot_date: date,
-        bio_age: result.bioAge,
-        chronological: result.chronological,
-        contributions: result.contributions,
-        inputs_used: result.inputsUsed,
-      },
-      { onConflict: "user_id,snapshot_date" },
-    );
-    written++;
+  const [{ data: metricRows }, { data: sleepRows }] = await Promise.all([
+    supabase
+      .from("daily_metric")
+      .select("metric_date, metric, value")
+      .eq("user_id", userId)
+      .gte("metric_date", windowStart)
+      .lte("metric_date", newest)
+      .in("metric", ["rhr", "hrv"]),
+    supabase
+      .from("sleep_session")
+      .select("night_date, total_min")
+      .eq("user_id", userId)
+      .gte("night_date", windowStart)
+      .lte("night_date", newest),
+  ]);
+
+  const rhrByDate = new Map<string, number[]>();
+  const hrvByDate = new Map<string, number[]>();
+  for (const row of (metricRows ?? []) as Record<string, unknown>[]) {
+    const v = Number(row.value);
+    if (!Number.isFinite(v)) continue;
+    const map = row.metric === "rhr" ? rhrByDate : hrvByDate;
+    const key = String(row.metric_date);
+    (map.get(key) ?? map.set(key, []).get(key)!).push(v);
+  }
+  const sleepByDate = new Map<string, number[]>();
+  for (const row of (sleepRows ?? []) as Record<string, unknown>[]) {
+    const v = Number(row.total_min);
+    if (!Number.isFinite(v) || v <= 0) continue;
+    const key = String(row.night_date);
+    (sleepByDate.get(key) ?? sleepByDate.set(key, []).get(key)!).push(v);
   }
 
-  return written;
+  const windowAvg = (map: Map<string, number[]>, dates: string[]) => {
+    const vals: number[] = [];
+    for (const d of dates) for (const v of map.get(d) ?? []) vals.push(v);
+    return vals.length > 0 ? average(vals) : null;
+  };
+
+  const payload: Record<string, unknown>[] = [];
+  for (const date of batch) {
+    const win = nDatesEnding(WINDOW_DAYS, date);
+    const result = computeBioAge({
+      chronologicalAge: profile.age,
+      sex: profile.sex,
+      vo2max: profile.vo2max,
+      restingHr: windowAvg(rhrByDate, win),
+      hrv: windowAvg(hrvByDate, win),
+      avgSleepMin: windowAvg(sleepByDate, win),
+      bodyFatPct: profile.bodyFatPct,
+    });
+    if (result.inputsUsed === 0) continue;
+    payload.push({
+      user_id: userId,
+      snapshot_date: date,
+      bio_age: result.bioAge,
+      chronological: result.chronological,
+      contributions: result.contributions,
+      inputs_used: result.inputsUsed,
+    });
+  }
+
+  if (payload.length > 0) {
+    // One batched write instead of one upsert per date.
+    await supabase
+      .from("bio_age_snapshot")
+      .upsert(payload, { onConflict: "user_id,snapshot_date" });
+  }
+  return payload.length;
 }
 
 /** Builds a user's bio-age report. When viewDate is set, reads the cached
@@ -190,12 +244,16 @@ export async function getBioAgeReport(
   const date = viewDate ?? today;
   const trend: BioAgeTrendPoint[] = [];
 
-  // Live result for the target date (today, or the past date being viewed).
-  const live = await computeForDate(userId, profile, date);
+  // Live result for the target date (today, or the past date being viewed),
+  // computed in parallel with the bounded historical backfill.
+  const [live] = await Promise.all([
+    computeForDate(userId, profile, date),
+    supabaseConfigured
+      ? backfillBioAgeHistory(userId, profile)
+      : Promise.resolve(0),
+  ]);
 
   if (supabaseConfigured) {
-    await backfillBioAgeHistory(userId, profile);
-
     // Persist a fresh snapshot for the target date. This keeps the latest
     // day current even when only a single new metric just synced.
     if (live.inputsUsed > 0) {

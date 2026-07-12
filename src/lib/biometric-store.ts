@@ -157,40 +157,34 @@ export async function getBiometricsOnOrBefore(
   if (!supabaseConfigured) return out;
   const dayEnd = `${date}T23:59:59.999Z`;
 
-  for (const m of METRICS) {
-    // Manual first
-    const { data: manual } = await supabase
+  const latest = (metric: BiometricMetric, source: BiometricSource) =>
+    supabase
       .from("biometric_log")
       .select("value")
       .eq("user_id", userId)
-      .eq("metric", m)
-      .eq("source", "manual")
+      .eq("metric", metric)
+      .eq("source", source)
       .lte("logged_at", dayEnd)
       .order("logged_at", { ascending: false })
       .limit(1)
       .maybeSingle();
-    if (manual) {
-      const v = Number((manual as { value: unknown }).value);
-      if (Number.isFinite(v)) {
-        out[m] = v;
-        continue;
+
+  // All six lookups (3 metrics × 2 sources) run in parallel; manual wins.
+  await Promise.all(
+    METRICS.map(async (m) => {
+      const [{ data: manual }, { data: hc }] = await Promise.all([
+        latest(m, "manual"),
+        latest(m, "health_connect"),
+      ]);
+      for (const row of [manual, hc]) {
+        if (!row) continue;
+        const v = Number((row as { value: unknown }).value);
+        if (Number.isFinite(v)) {
+          out[m] = v;
+          return;
+        }
       }
-    }
-    // Fall back to HC
-    const { data: hc } = await supabase
-      .from("biometric_log")
-      .select("value")
-      .eq("user_id", userId)
-      .eq("metric", m)
-      .eq("source", "health_connect")
-      .lte("logged_at", dayEnd)
-      .order("logged_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (hc) {
-      const v = Number((hc as { value: unknown }).value);
-      if (Number.isFinite(v)) out[m] = v;
-    }
-  }
+    }),
+  );
   return out;
 }

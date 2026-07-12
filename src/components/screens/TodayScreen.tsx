@@ -2,6 +2,7 @@
 // AppShell and inside the mobile carousel. Accepts an optional viewDate prop;
 // when set, all data is scoped to that past calendar date.
 
+import { Suspense } from "react";
 import CalorieBalanceChart from "@/components/CalorieBalanceChart";
 import DailyReviewCard from "@/components/DailyReviewCard";
 import BioAgeHistory from "@/components/BioAgeHistory";
@@ -20,6 +21,7 @@ import { supabaseConfigured } from "@/lib/supabase";
 import type { BioAgeReport } from "@/lib/bioage-store";
 import type { Confidence } from "@/lib/bioage-confidence";
 import type { LifetimeAverages } from "@/lib/activity-types";
+import type { Profile } from "@/lib/types";
 
 const fmt = (n: number) => Math.round(n).toLocaleString();
 
@@ -51,19 +53,15 @@ export default async function TodayScreen({
   const profile = await getProfile(userId);
   const targets = deriveTargets(profile);
 
-  // These reads are independent of each other — run them in parallel.
+  // These reads are independent of each other — run them in parallel. The
+  // daily review is NOT awaited here: generating it can involve a slow AI
+  // call, so it streams in behind a Suspense boundary below.
   const [nutrition, activity, bio, pastBiometricsInitial] = await Promise.all([
     getNutritionForDate(userId, date),
     getActivitySummary(userId, profile, 7, isPast ? date : undefined),
     getBioAgeReport(userId, profile, isPast ? date : undefined),
     isPast ? getBiometricsOnOrBefore(userId, date) : Promise.resolve(null),
   ]);
-
-  // The review reads bio-age snapshots, so it runs after the report above
-  // has backfilled them.
-  const review = isPast
-    ? await getReviewForDate(userId, profile, date)
-    : await getYesterdayReview(userId, profile);
 
   const dayBalance = activity.balance[activity.balance.length - 1];
   const dayBurn = dayBalance?.burnKcal ?? null;
@@ -103,7 +101,14 @@ export default async function TodayScreen({
 
       <BioAgeHistory trend={bio.trend} />
 
-      {review && <DailyReviewCard review={review} />}
+      <Suspense fallback={<ReviewSkeleton isPast={isPast} />}>
+        <ReviewSection
+          userId={userId}
+          profile={profile}
+          date={date}
+          isPast={isPast}
+        />
+      </Suspense>
 
       <div className="act-2col">
         <CalorieBalanceCard
@@ -157,6 +162,36 @@ export default async function TodayScreen({
 }
 
 // --------------------------------------------------------------------------
+
+/** Streams in after the rest of the page: fetching (or generating) the AI
+ *  review can take several seconds when it isn't cached yet. */
+async function ReviewSection({
+  userId,
+  profile,
+  date,
+  isPast,
+}: {
+  userId: string;
+  profile: Profile;
+  date: string;
+  isPast: boolean;
+}) {
+  const review = isPast
+    ? await getReviewForDate(userId, profile, date)
+    : await getYesterdayReview(userId, profile);
+  return review ? <DailyReviewCard review={review} /> : null;
+}
+
+function ReviewSkeleton({ isPast }: { isPast: boolean }) {
+  return (
+    <div className="card review-card">
+      <div className="card-h">
+        <div className="t">{isPast ? "Day Review" : "Yesterday's Review"}</div>
+        <div className="x">Vityl Coach is writing this day&apos;s review…</div>
+      </div>
+    </div>
+  );
+}
 
 function BioAgeHero({ bio, isPast }: { bio: BioAgeReport; isPast: boolean }) {
   const { result, trend, dayDelta } = bio;

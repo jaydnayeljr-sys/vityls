@@ -5,7 +5,7 @@
 // medium, grey = low, faint = no data). Works the same on desktop and mobile.
 
 import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   confidenceColor,
   type Confidence,
@@ -22,6 +22,10 @@ export default function CalendarPicker({
   confidenceByDate: Record<string, Confidence>;
 }) {
   const router = useRouter();
+  const pathname = usePathname();
+  // On the mobile carousel (/m) navigate within /m, so the date survives the
+  // mobile-redirect middleware; on desktop navigate within /today.
+  const base = pathname.startsWith("/m") ? "/m" : "/today";
   const [open, setOpen] = useState(false);
   const [cursor, setCursor] = useState(() => {
     const d = parse(date);
@@ -47,11 +51,7 @@ export default function CalendarPicker({
 
   function navigate(to: string) {
     setOpen(false);
-    if (to === today) {
-      router.push("/today");
-    } else {
-      router.push(`/today?date=${to}`);
-    }
+    router.push(to === today ? base : `${base}?date=${to}`);
   }
 
   function shiftMonth(delta: number) {

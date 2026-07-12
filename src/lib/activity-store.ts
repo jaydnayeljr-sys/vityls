@@ -2,6 +2,7 @@
 // sleep. Written by /api/sync; read by the Activity and Today screens.
 
 import "server-only";
+import { cache } from "react";
 import { supabase, supabaseConfigured } from "./supabase";
 import { lastNDates, nDatesEnding } from "./dates";
 import { resolveBmr } from "./calc";
@@ -112,18 +113,23 @@ function emptyAverages(): LifetimeAverages {
   };
 }
 
-/** Average value per metric across every day the user has synced. */
-export async function getLifetimeAverages(
+/** Average value per metric across every day the user has synced.
+ *  Wrapped in React cache() — multiple screens/sections request this in the
+ *  same render, and it scans two whole tables. */
+export const getLifetimeAverages = cache(async (
   userId: string,
-): Promise<LifetimeAverages> {
+): Promise<LifetimeAverages> => {
   const out = emptyAverages();
   if (!supabaseConfigured) return out;
 
-  const { data: metricRows } = await supabase
-    .from("daily_metric")
-    .select("metric, value")
-    .eq("user_id", userId)
-    .in("metric", METRIC_KEYS as readonly string[]);
+  const [{ data: metricRows }, { data: sleepRows }] = await Promise.all([
+    supabase
+      .from("daily_metric")
+      .select("metric, value")
+      .eq("user_id", userId)
+      .in("metric", METRIC_KEYS as readonly string[]),
+    supabase.from("sleep_session").select("total_min").eq("user_id", userId),
+  ]);
 
   const sums: Record<string, { total: number; count: number }> = {};
   for (const row of (metricRows ?? []) as Record<string, unknown>[]) {
@@ -141,10 +147,6 @@ export async function getLifetimeAverages(
     }
   }
 
-  const { data: sleepRows } = await supabase
-    .from("sleep_session")
-    .select("total_min")
-    .eq("user_id", userId);
   const sleepValues = ((sleepRows ?? []) as Record<string, unknown>[])
     .map((r) => Number(r.total_min))
     .filter((v) => Number.isFinite(v) && v > 0);
@@ -155,7 +157,7 @@ export async function getLifetimeAverages(
   }
 
   return out;
-}
+});
 
 /** Sums a user's logged food calories per calendar date in [start, end]. */
 async function caloriesByDate(
@@ -202,45 +204,52 @@ export async function getActivitySummary(
   let lastNight: SleepNight | null = null;
   let hasAnyData = false;
 
-  if (supabaseConfigured) {
-    const { data: metricRows } = await supabase
-      .from("daily_metric")
-      .select("metric_date, metric, value")
-      .eq("user_id", userId)
-      .gte("metric_date", start)
-      .lte("metric_date", last);
-    for (const row of (metricRows ?? []) as Record<string, unknown>[]) {
-      const day = byDate.get(String(row.metric_date));
-      const metric = String(row.metric) as MetricKey;
-      if (day && METRIC_KEYS.includes(metric)) {
-        day[metric] = numOrNull(row.value);
-        hasAnyData = true;
-      }
-    }
+  // All four reads are independent — run them in parallel.
+  const [metricRes, sleepRes, intake, averages] = await Promise.all([
+    supabaseConfigured
+      ? supabase
+          .from("daily_metric")
+          .select("metric_date, metric, value")
+          .eq("user_id", userId)
+          .gte("metric_date", start)
+          .lte("metric_date", last)
+      : Promise.resolve({ data: null }),
+    supabaseConfigured
+      ? supabase
+          .from("sleep_session")
+          .select("*")
+          .eq("user_id", userId)
+          .lte("night_date", last)
+          .order("night_date", { ascending: false })
+          .limit(1)
+      : Promise.resolve({ data: null }),
+    caloriesByDate(userId, start, last),
+    getLifetimeAverages(userId),
+  ]);
 
-    const { data: sleepRows } = await supabase
-      .from("sleep_session")
-      .select("*")
-      .eq("user_id", userId)
-      .lte("night_date", last)
-      .order("night_date", { ascending: false })
-      .limit(1);
-    const s = (sleepRows ?? [])[0] as Record<string, unknown> | undefined;
-    if (s) {
-      lastNight = {
-        night: String(s.night_date),
-        totalMin: numOrNull(s.total_min),
-        deepMin: numOrNull(s.deep_min),
-        remMin: numOrNull(s.rem_min),
-        lightMin: numOrNull(s.light_min),
-        awakeMin: numOrNull(s.awake_min),
-        score: numOrNull(s.score),
-      };
+  for (const row of (metricRes.data ?? []) as Record<string, unknown>[]) {
+    const day = byDate.get(String(row.metric_date));
+    const metric = String(row.metric) as MetricKey;
+    if (day && METRIC_KEYS.includes(metric)) {
+      day[metric] = numOrNull(row.value);
       hasAnyData = true;
     }
   }
 
-  const intake = await caloriesByDate(userId, start, last);
+  const s = ((sleepRes.data ?? []) as Record<string, unknown>[])[0];
+  if (s) {
+    lastNight = {
+      night: String(s.night_date),
+      totalMin: numOrNull(s.total_min),
+      deepMin: numOrNull(s.deep_min),
+      remMin: numOrNull(s.rem_min),
+      lightMin: numOrNull(s.light_min),
+      awakeMin: numOrNull(s.awake_min),
+      score: numOrNull(s.score),
+    };
+    hasAnyData = true;
+  }
+
   const dayList = dates.map((d) => byDate.get(d) as DayMetrics);
   const { bmr } = resolveBmr(profile);
 
@@ -265,8 +274,6 @@ export async function getActivitySummary(
       burnKcal: burn,
     };
   });
-
-  const averages = await getLifetimeAverages(userId);
 
   return {
     days: dayList,
