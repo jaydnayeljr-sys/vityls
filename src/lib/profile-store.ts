@@ -1,6 +1,7 @@
 // Server-side read/write helpers for a user's profile row.
 
 import "server-only";
+import { cache } from "react";
 import { supabase, supabaseConfigured } from "./supabase";
 import { DEFAULT_PROFILE, type Profile } from "./types";
 
@@ -52,8 +53,10 @@ function profileToRow(userId: string, p: Profile): Record<string, unknown> {
   };
 }
 
-/** Reads a user's profile, creating a default row on first access. */
-export async function getProfile(userId: string): Promise<Profile> {
+/** Reads a user's profile, creating a default row on first access.
+ *  Wrapped in React cache() so the four screens rendered together on /m
+ *  share one fetch per request instead of each querying it. */
+export const getProfile = cache(async (userId: string): Promise<Profile> => {
   if (!supabaseConfigured) return { ...DEFAULT_PROFILE, id: userId };
 
   const { data } = await supabase
@@ -68,7 +71,7 @@ export async function getProfile(userId: string): Promise<Profile> {
     .from("profile")
     .upsert(profileToRow(userId, fresh), { onConflict: "user_id" });
   return fresh;
-}
+});
 
 /** Upserts a user's profile row. */
 export async function saveProfile(userId: string, p: Profile): Promise<void> {

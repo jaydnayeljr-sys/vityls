@@ -137,31 +137,35 @@ async function gatherReviewData(
   if (!supabaseConfigured) return null;
   const dayBefore = addDays(date, -1);
 
-  const { data: metricRows } = await supabase
-    .from("daily_metric")
-    .select("metric, value")
-    .eq("user_id", userId)
-    .eq("metric_date", date);
+  // All four reads are independent — run them in parallel.
+  const [{ data: metricRows }, { data: sleepRow }, averages, { data: snapRows }, nut] =
+    await Promise.all([
+      supabase
+        .from("daily_metric")
+        .select("metric, value")
+        .eq("user_id", userId)
+        .eq("metric_date", date),
+      supabase
+        .from("sleep_session")
+        .select("*")
+        .eq("user_id", userId)
+        .eq("night_date", date)
+        .maybeSingle(),
+      getLifetimeAverages(userId),
+      supabase
+        .from("bio_age_snapshot")
+        .select("snapshot_date, bio_age")
+        .eq("user_id", userId)
+        .in("snapshot_date", [date, dayBefore]),
+      nutritionTotalsForDate(userId, date),
+    ]);
+
   const metricsForDay: Record<string, number> = {};
   for (const row of (metricRows ?? []) as Record<string, unknown>[]) {
     metricsForDay[String(row.metric)] = Number(row.value);
   }
-
-  const { data: sleepRow } = await supabase
-    .from("sleep_session")
-    .select("*")
-    .eq("user_id", userId)
-    .eq("night_date", date)
-    .maybeSingle();
   const sleep = sleepRow as Record<string, unknown> | null;
 
-  const averages = await getLifetimeAverages(userId);
-
-  const { data: snapRows } = await supabase
-    .from("bio_age_snapshot")
-    .select("snapshot_date, bio_age")
-    .eq("user_id", userId)
-    .in("snapshot_date", [date, dayBefore]);
   let bioYesterday: number | null = null;
   let bioDayBefore: number | null = null;
   for (const row of (snapRows ?? []) as Record<string, unknown>[]) {
@@ -175,7 +179,6 @@ async function gatherReviewData(
       ? Number((bioYesterday - bioDayBefore).toFixed(2))
       : null;
 
-  const nut = await nutritionTotalsForDate(userId, date);
   const targets = deriveTargets(profile);
 
   const metrics: Record<
