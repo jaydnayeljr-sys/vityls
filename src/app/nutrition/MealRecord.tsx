@@ -102,7 +102,7 @@ export default function MealRecord({
       const res = await fetch("/api/nutrition/item", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id, ...draft }),
+        body: JSON.stringify({ id, date: nutrition.date, ...draft }),
       });
       const data = await res.json();
       if (!res.ok || !data.ok) {
@@ -124,7 +124,7 @@ export default function MealRecord({
       const res = await fetch("/api/nutrition/item", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id }),
+        body: JSON.stringify({ id, date: nutrition.date }),
       });
       const data = await res.json();
       if (!res.ok || !data.ok) {

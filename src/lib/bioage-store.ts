@@ -5,23 +5,17 @@
 
 import "server-only";
 import { supabase, supabaseConfigured } from "./supabase";
-import { lastNDates, nDatesEnding } from "./activity-store";
+import { nDatesEnding, todayLocal } from "./dates";
 import { computeBioAge, type BioAgeResult } from "./bioage";
+import { confidenceFromInputs, type Confidence } from "./bioage-confidence";
 import type { Profile } from "./types";
 
 export type { BioAgeResult } from "./bioage";
+export { confidenceFromInputs, type Confidence } from "./bioage-confidence";
 
 const WINDOW_DAYS = 14;
 const BACKFILL_CAP = 90; // dates computed per page load
 const TREND_LIMIT = 365 * 2;
-
-export type Confidence = "high" | "medium" | "low";
-
-export function confidenceFromInputs(n: number): Confidence {
-  if (n >= 4) return "high";
-  if (n >= 2) return "medium";
-  return "low";
-}
 
 export interface BioAgeTrendPoint {
   date: string;
@@ -41,17 +35,22 @@ function average(values: number[]): number {
   return values.reduce((s, v) => s + v, 0) / values.length;
 }
 
-function pad(n: number): string {
-  return String(n).padStart(2, "0");
-}
-
-function dateOnly(d: Date): string {
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-}
-
-function parseDate(s: string): Date {
-  const [y, m, d] = s.split("-").map(Number);
-  return new Date(y, m - 1, d);
+/** Computes the bio-age result for `date` from the user's stored markers. */
+async function computeForDate(
+  userId: string,
+  profile: Profile,
+  date: string,
+): Promise<BioAgeResult> {
+  const { rhr, hrv, sleep } = await gatherMarkers(userId, date);
+  return computeBioAge({
+    chronologicalAge: profile.age,
+    sex: profile.sex,
+    vo2max: profile.vo2max,
+    restingHr: rhr,
+    hrv,
+    avgSleepMin: sleep,
+    bodyFatPct: profile.bodyFatPct,
+  });
 }
 
 /** Gathers RHR / HRV / sleep window markers for a user up to (and including) the given date. */
@@ -128,7 +127,7 @@ export async function backfillBioAgeHistory(
 ): Promise<number> {
   if (!supabaseConfigured) return 0;
 
-  const today = dateOnly(new Date());
+  const today = todayLocal();
   const present = await datesWithData(userId);
 
   const { data: snapRows } = await supabase
@@ -159,16 +158,7 @@ export async function backfillBioAgeHistory(
 
   let written = 0;
   for (const date of batch) {
-    const { rhr, hrv, sleep } = await gatherMarkers(userId, date);
-    const result = computeBioAge({
-      chronologicalAge: profile.age,
-      sex: profile.sex,
-      vo2max: profile.vo2max,
-      restingHr: rhr,
-      hrv,
-      avgSleepMin: sleep,
-      bodyFatPct: profile.bodyFatPct,
-    });
+    const result = await computeForDate(userId, profile, date);
     if (result.inputsUsed === 0) continue;
 
     await supabase.from("bio_age_snapshot").upsert(
@@ -196,35 +186,27 @@ export async function getBioAgeReport(
   profile: Profile,
   viewDate?: string,
 ): Promise<BioAgeReport> {
-  const today = dateOnly(new Date());
+  const today = todayLocal();
   const date = viewDate ?? today;
   const trend: BioAgeTrendPoint[] = [];
+
+  // Live result for the target date (today, or the past date being viewed).
+  const live = await computeForDate(userId, profile, date);
 
   if (supabaseConfigured) {
     await backfillBioAgeHistory(userId, profile);
 
-    // Recompute and persist a fresh snapshot for the target date (today, or
-    // the past date being viewed). This keeps the latest day current even
-    // when only a single new metric just synced.
-    const { rhr, hrv, sleep } = await gatherMarkers(userId, date);
-    const result = computeBioAge({
-      chronologicalAge: profile.age,
-      sex: profile.sex,
-      vo2max: profile.vo2max,
-      restingHr: rhr,
-      hrv,
-      avgSleepMin: sleep,
-      bodyFatPct: profile.bodyFatPct,
-    });
-    if (result.inputsUsed > 0) {
+    // Persist a fresh snapshot for the target date. This keeps the latest
+    // day current even when only a single new metric just synced.
+    if (live.inputsUsed > 0) {
       await supabase.from("bio_age_snapshot").upsert(
         {
           user_id: userId,
           snapshot_date: date,
-          bio_age: result.bioAge,
-          chronological: result.chronological,
-          contributions: result.contributions,
-          inputs_used: result.inputsUsed,
+          bio_age: live.bioAge,
+          chronological: live.chronological,
+          contributions: live.contributions,
+          inputs_used: live.inputsUsed,
         },
         { onConflict: "user_id,snapshot_date" },
       );
@@ -250,20 +232,6 @@ export async function getBioAgeReport(
     }
   }
 
-  // Live result for the target date (uses freshly-gathered window).
-  const live = await (async () => {
-    const { rhr, hrv, sleep } = await gatherMarkers(userId, date);
-    return computeBioAge({
-      chronologicalAge: profile.age,
-      sex: profile.sex,
-      vo2max: profile.vo2max,
-      restingHr: rhr,
-      hrv,
-      avgSleepMin: sleep,
-      bodyFatPct: profile.bodyFatPct,
-    });
-  })();
-
   // Prefer the cached snapshot for that exact date (if any), so the page
   // shows the same number as the chart and calendar.
   let result = live;
@@ -275,6 +243,7 @@ export async function getBioAgeReport(
       chronological: snap.chronological,
       delta: Number((snap.bioAge - snap.chronological).toFixed(2)),
       inputsUsed: snap.inputsUsed,
+      confidence: snap.confidence,
     };
   }
 
@@ -290,7 +259,3 @@ export async function getBioAgeReport(
 
   return { result, trend, dayDelta };
 }
-
-// Silence: nDatesEnding is imported only for backfill-window math via gatherMarkers.
-export type _N = typeof nDatesEnding;
-export type _L = typeof lastNDates;

@@ -14,6 +14,7 @@ const PUBLIC_PATHS = [
   "/api/auth/app-login",
   "/api/auth/app-signup",
   "/api/sync",
+  "/vityl.apk", // APK download on the public landing page
 ];
 
 // The desktop app routes that have a mobile-carousel equivalent at /m.

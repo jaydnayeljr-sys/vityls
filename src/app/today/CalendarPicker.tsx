@@ -10,19 +10,7 @@ import {
   confidenceColor,
   type Confidence,
 } from "@/lib/bioage-confidence";
-
-function pad(n: number): string {
-  return String(n).padStart(2, "0");
-}
-
-function dateStr(d: Date): string {
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-}
-
-function parse(s: string): Date {
-  const [y, m, d] = s.split("-").map(Number);
-  return new Date(y, m - 1, d);
-}
+import { dateStr, parseDate as parse, todayLocal } from "@/lib/dates";
 
 const DAY_HEADERS = ["S", "M", "T", "W", "T", "F", "S"];
 
@@ -40,7 +28,7 @@ export default function CalendarPicker({
     return new Date(d.getFullYear(), d.getMonth(), 1);
   });
   const wrapRef = useRef<HTMLDivElement>(null);
-  const today = dateStr(new Date());
+  const today = todayLocal();
   const isPast = date < today;
 
   useEffect(() => {

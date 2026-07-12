@@ -4,16 +4,13 @@
 // generated on demand if it hasn't been written yet.
 
 import "server-only";
-import Anthropic from "@anthropic-ai/sdk";
 import { supabase, supabaseConfigured } from "./supabase";
-import { anthropicConfigured } from "./anthropic";
+import { MODEL, anthropicConfigured, client } from "./anthropic";
 import { deriveTargets } from "./calc";
-import { getLifetimeAverages, lastNDates, nDatesEnding } from "./activity-store";
+import { getLifetimeAverages } from "./activity-store";
+import { addDays, todayLocal } from "./dates";
 import type { Profile } from "./types";
 import { METRIC_KEYS } from "./activity-types";
-
-const MODEL = "claude-sonnet-4-6";
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY ?? "" });
 
 export interface DailyReview {
   date: string;
@@ -91,19 +88,8 @@ Be specific to the numbers in the data. Use plain language and approachable
 tone — not clinical. Never tell them to consult a doctor unless data clearly
 indicates a serious problem. Always call the submit_daily_review tool.`;
 
-function pad(n: number): string {
-  return String(n).padStart(2, "0");
-}
-
 function yesterdayDate(): string {
-  return lastNDates(2)[0];
-}
-
-function dayBeforeDate(date: string): string {
-  const [y, m, d] = date.split("-").map(Number);
-  const dt = new Date(y, m - 1, d);
-  dt.setDate(dt.getDate() - 1);
-  return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`;
+  return addDays(todayLocal(), -1);
 }
 
 async function nutritionTotalsForDate(
@@ -149,7 +135,7 @@ async function gatherReviewData(
   date: string,
 ): Promise<ReviewData | null> {
   if (!supabaseConfigured) return null;
-  const dayBefore = dayBeforeDate(date);
+  const dayBefore = addDays(date, -1);
 
   const { data: metricRows } = await supabase
     .from("daily_metric")
@@ -345,6 +331,3 @@ export async function getYesterdayReview(
 ): Promise<DailyReview | null> {
   return getReviewForDate(userId, profile, yesterdayDate());
 }
-
-// Silence unused import warning — kept for re-export consistency.
-export type _NDates = typeof nDatesEnding;

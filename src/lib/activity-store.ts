@@ -3,6 +3,7 @@
 
 import "server-only";
 import { supabase, supabaseConfigured } from "./supabase";
+import { lastNDates, nDatesEnding } from "./dates";
 import { resolveBmr } from "./calc";
 import type { Profile } from "./types";
 import {
@@ -33,36 +34,6 @@ export interface SleepInput {
   lightMin?: number | null;
   awakeMin?: number | null;
   score?: number | null;
-}
-
-function pad(x: number): string {
-  return String(x).padStart(2, "0");
-}
-
-function dateStr(d: Date): string {
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-}
-
-function parseDate(s: string): Date {
-  const [y, m, d] = s.split("-").map(Number);
-  return new Date(y, m - 1, d);
-}
-
-/** The last n local calendar dates, oldest first, including today. */
-export function lastNDates(n: number): string[] {
-  return nDatesEnding(n, dateStr(new Date()));
-}
-
-/** The n calendar dates ending on `endDate` (inclusive), oldest first. */
-export function nDatesEnding(n: number, endDate: string): string[] {
-  const out: string[] = [];
-  const end = parseDate(endDate);
-  for (let i = n - 1; i >= 0; i--) {
-    const d = new Date(end);
-    d.setDate(end.getDate() - i);
-    out.push(dateStr(d));
-  }
-  return out;
 }
 
 function numOrNull(v: unknown): number | null {

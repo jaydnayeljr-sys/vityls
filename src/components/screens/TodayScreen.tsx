@@ -10,7 +10,8 @@ import PastBiometricEditor from "@/app/today/PastBiometricEditor";
 import PastDayMeals from "@/app/today/PastDayMeals";
 import { getProfile } from "@/lib/profile-store";
 import { deriveTargets } from "@/lib/calc";
-import { getNutritionForDate, todayLocal } from "@/lib/nutrition-store";
+import { getNutritionForDate } from "@/lib/nutrition-store";
+import { parseDate, todayLocal } from "@/lib/dates";
 import { getActivitySummary } from "@/lib/activity-store";
 import { getBioAgeReport } from "@/lib/bioage-store";
 import { getReviewForDate, getYesterdayReview } from "@/lib/review-store";
@@ -29,8 +30,7 @@ function hm(min: number): string {
 }
 
 function prettyDate(iso: string): string {
-  const [y, m, d] = iso.split("-").map(Number);
-  return new Date(y, m - 1, d).toLocaleDateString("en-US", {
+  return parseDate(iso).toLocaleDateString("en-US", {
     weekday: "long",
     day: "numeric",
     month: "long",
@@ -50,21 +50,20 @@ export default async function TodayScreen({
 
   const profile = await getProfile(userId);
   const targets = deriveTargets(profile);
-  const nutrition = await getNutritionForDate(userId, date);
-  const activity = await getActivitySummary(
-    userId,
-    profile,
-    7,
-    isPast ? date : undefined,
-  );
-  const bio = await getBioAgeReport(userId, profile, isPast ? date : undefined);
+
+  // These reads are independent of each other — run them in parallel.
+  const [nutrition, activity, bio, pastBiometricsInitial] = await Promise.all([
+    getNutritionForDate(userId, date),
+    getActivitySummary(userId, profile, 7, isPast ? date : undefined),
+    getBioAgeReport(userId, profile, isPast ? date : undefined),
+    isPast ? getBiometricsOnOrBefore(userId, date) : Promise.resolve(null),
+  ]);
+
+  // The review reads bio-age snapshots, so it runs after the report above
+  // has backfilled them.
   const review = isPast
     ? await getReviewForDate(userId, profile, date)
     : await getYesterdayReview(userId, profile);
-
-  const pastBiometricsInitial = isPast
-    ? await getBiometricsOnOrBefore(userId, date)
-    : null;
 
   const dayBalance = activity.balance[activity.balance.length - 1];
   const dayBurn = dayBalance?.burnKcal ?? null;

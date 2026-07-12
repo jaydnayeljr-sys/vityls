@@ -194,12 +194,3 @@ export async function getBiometricsOnOrBefore(
   }
   return out;
 }
-
-/** Most recent value for a metric (manual preferred). */
-export async function getLatestBiometric(
-  userId: string,
-  metric: BiometricMetric,
-): Promise<number | null> {
-  const all = await getBiometricsOnOrBefore(userId, new Date().toISOString().slice(0, 10));
-  return all[metric];
-}

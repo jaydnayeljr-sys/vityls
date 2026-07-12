@@ -4,10 +4,11 @@
 import { NextResponse } from "next/server";
 import {
   deleteFoodItem,
-  getTodayNutrition,
+  getNutritionForDate,
   updateFoodItem,
   type FoodItemPatch,
 } from "@/lib/nutrition-store";
+import { todayLocal } from "@/lib/dates";
 import { getCurrentUser } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
@@ -19,6 +20,15 @@ const NUM_KEYS = [
   "fat_g",
   "fiber_g",
 ] as const;
+
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** The calendar date whose record should be returned after the edit — the
+ *  date the client is viewing (past-day editor) or today by default. */
+function targetDate(body: Record<string, unknown>): string {
+  const raw = typeof body.date === "string" ? body.date : "";
+  return DATE_RE.test(raw) ? raw : todayLocal();
+}
 
 function bad(error: string, status = 400) {
   return NextResponse.json({ ok: false, error }, { status });
@@ -60,7 +70,7 @@ export async function PATCH(req: Request) {
     return NextResponse.json({ ok: false, error: msg }, { status: 500 });
   }
 
-  const nutrition = await getTodayNutrition(user.id);
+  const nutrition = await getNutritionForDate(user.id, targetDate(body));
   return NextResponse.json({ ok: true, nutrition });
 }
 
@@ -81,6 +91,6 @@ export async function DELETE(req: Request) {
     return NextResponse.json({ ok: false, error: msg }, { status: 500 });
   }
 
-  const nutrition = await getTodayNutrition(user.id);
+  const nutrition = await getNutritionForDate(user.id, targetDate(body));
   return NextResponse.json({ ok: true, nutrition });
 }

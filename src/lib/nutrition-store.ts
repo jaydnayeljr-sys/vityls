@@ -2,6 +2,7 @@
 
 import "server-only";
 import { supabase, supabaseConfigured } from "./supabase";
+import { todayLocal } from "./dates";
 import {
   MICRO_KEYS,
   type DailyNutrition,
@@ -32,12 +33,7 @@ export interface FoodItemPatch {
   fiber_g?: number;
 }
 
-/** Local calendar date (YYYY-MM-DD). */
-export function todayLocal(): string {
-  const d = new Date();
-  const p = (x: number) => String(x).padStart(2, "0");
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-}
+export { todayLocal } from "./dates";
 
 function emptyTotals(): NutritionTotals {
   return { calories: 0, protein_g: 0, carbs_g: 0, fat_g: 0, fiber_g: 0, micros: {} };
@@ -104,7 +100,11 @@ export async function logMeal(
   }));
   if (rows.length > 0) {
     const { error: itemErr } = await supabase.from("food_item").insert(rows);
-    if (itemErr) throw new Error(itemErr.message);
+    if (itemErr) {
+      // Don't leave an empty meal behind if the items failed to save.
+      await supabase.from("food_log").delete().eq("id", (log as { id: number }).id);
+      throw new Error(itemErr.message);
+    }
   }
 }
 

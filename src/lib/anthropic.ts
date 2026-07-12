@@ -22,10 +22,11 @@ const apiKey = process.env.ANTHROPIC_API_KEY;
 /** True once ANTHROPIC_API_KEY has been set in the environment. */
 export const anthropicConfigured = Boolean(apiKey);
 
-// Model used for nutrition extraction. Change here if needed.
-const MODEL = "claude-sonnet-4-6";
+// Model used for all AI features (nutrition extraction, daily review).
+export const MODEL = "claude-sonnet-4-6";
 
-const client = new Anthropic({ apiKey: apiKey ?? "" });
+/** Shared server-side Anthropic client. */
+export const client = new Anthropic({ apiKey: apiKey ?? "" });
 
 // --- tool definition --------------------------------------------------------
 
